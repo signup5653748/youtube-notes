@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>YouTube Video Notes</title>
+<style>
+  :root{
+    --bg:#f6f6f8; --surface:#ffffff; --surface-2:#f0f0f2; --border:#e3e3e7;
+    --text:#18181b; --text-muted:#71717a; --accent:#dc2626; --accent-text:#ffffff;
+    --radius:12px;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#121214; --surface:#1c1c1f; --surface-2:#232327; --border:#2d2d31;
+      --text:#f4f4f5; --text-muted:#a1a1aa; --accent:#ef4444; --accent-text:#ffffff;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#121214; --surface:#1c1c1f; --surface-2:#232327; --border:#2d2d31;
+    --text:#f4f4f5; --text-muted:#a1a1aa; --accent:#ef4444; --accent-text:#ffffff;
+  }
+  html{ scroll-padding-top:env(safe-area-inset-top,0px); }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  .wrap{ max-width:720px; margin:0 auto; padding:16px 16px 48px; }
+  h1{ font-size:1.25rem; margin:4px 0 16px; }
+  .row{ display:flex; gap:8px; }
+  input[type=text]{
+    flex:1; min-width:0; padding:10px 12px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--text); font-size:0.95rem;
+  }
+  button{
+    font:inherit; cursor:pointer; border:1px solid var(--border); background:var(--surface-2);
+    color:var(--text); border-radius:8px; padding:10px 14px;
+  }
+  button.primary{ background:var(--accent); color:var(--accent-text); border-color:var(--accent); }
+  button:active{ opacity:0.8; }
+  button:disabled{ opacity:0.5; cursor:not-allowed; }
+  .video-wrap{
+    position:relative; width:100%; padding-top:56.25%; background:#000;
+    border-radius:var(--radius); overflow:hidden; margin:16px 0 4px;
+  }
+  .video-wrap iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; }
+  #player{ position:absolute; inset:0; width:100%; height:100%; }
+  .empty-state{
+    display:flex; align-items:center; justify-content:center; height:100%;
+    position:absolute; inset:0; color:#999; font-size:0.9rem; padding:0 20px; text-align:center;
+  }
+  .status-row{ display:flex; justify-content:space-between; align-items:center; margin:6px 2px 16px; }
+  .time-live{ font-size:0.82rem; color:var(--text-muted); font-variant-numeric:tabular-nums; }
+  .api-status{ font-size:0.75rem; color:var(--text-muted); }
+  .panel{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:14px; margin-bottom:20px;
+  }
+  .panel h2{ font-size:0.95rem; margin:0 0 10px; }
+  textarea{
+    width:100%; min-height:60px; padding:10px 12px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--text); font:inherit; resize:vertical; margin-bottom:10px;
+  }
+  .notes-header{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; }
+  .notes-header h2{ margin:0; }
+  .count{ color:var(--text-muted); font-size:0.85rem; }
+  .note{
+    display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-top:1px solid var(--border);
+  }
+  .note:first-child{ border-top:none; }
+  .note-time{
+    flex:none; background:var(--surface-2); border:1px solid var(--border); color:var(--text);
+    border-radius:7px; padding:6px 9px; font-size:0.82rem; font-variant-numeric:tabular-nums;
+    cursor:pointer;
+  }
+  .note-body{ flex:1; min-width:0; }
+  .note-text{ white-space:pre-wrap; word-break:break-word; font-size:0.92rem; line-height:1.35; }
+  .note-actions{ display:flex; gap:10px; margin-top:4px; }
+  .note-actions button{ padding:3px 8px; font-size:0.78rem; background:none; border:none; color:var(--text-muted); }
+  .note-actions button:hover{ color:var(--text); }
+  .note-edit textarea{ margin-bottom:6px; min-height:50px; }
+  .no-notes{ color:var(--text-muted); font-size:0.88rem; padding:6px 0; }
+  .hint{ color:var(--text-muted); font-size:0.78rem; margin-top:-8px; margin-bottom:16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📝 YouTube Video Notes</h1>
+
+  <div class="row">
+    <input type="text" id="urlInput" placeholder="Paste a YouTube video URL…">
+    <button class="primary" id="loadBtn">Load</button>
+  </div>
+  <div class="hint">Works with youtube.com/watch, youtu.be, and shorts links.</div>
+
+  <div class="video-wrap" id="videoWrap">
+    <div class="empty-state" id="emptyState">Paste a YouTube link above to start watching</div>
+  </div>
+  <div class="status-row">
+    <span class="time-live" id="timeLive"></span>
+    <span class="api-status" id="apiStatus">Loading player API…</span>
+  </div>
+
+  <div class="panel">
+    <h2>Add a note</h2>
+    <textarea id="noteText" placeholder="What's happening right now?"></textarea>
+    <button class="primary" id="addBtn" disabled>➕ Add note at current time</button>
+  </div>
+
+  <div class="panel">
+    <div class="notes-header">
+      <h2>Notes</h2>
+      <span class="count" id="noteCount"></span>
+    </div>
+    <div id="notesList"></div>
+  </div>
+</div>
+
+<script>
+  var apiReady = false;
+  var player = null;
+  var videoId = null;
+  var pendingVideoId = null;
+  var tickTimer = null;
+
+  var videoWrap = document.getElementById('videoWrap');
+  var emptyState = document.getElementById('emptyState');
+  var timeLive = document.getElementById('timeLive');
+  var apiStatus = document.getElementById('apiStatus');
+  var urlInput = document.getElementById('urlInput');
+  var noteText = document.getElementById('noteText');
+  var addBtn = document.getElementById('addBtn');
+  var notesList = document.getElementById('notesList');
+  var noteCount = document.getElementById('noteCount');
+
+  // Load the official YouTube IFrame Player API (reliable getCurrentTime, no postMessage guesswork)
+  var tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+
+  window.onYouTubeIframeAPIReady = function(){
+    apiReady = true;
+    apiStatus.textContent = 'Player ready';
+    if(pendingVideoId){ createOrLoad(pendingVideoId); pendingVideoId = null; }
+  };
+
+  function extractId(raw){
+    if(!raw) return null;
+    raw = raw.trim();
+    var patterns = [
+      /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+      /youtube\.com\/watch\?[^#]*v=([a-zA-Z0-9_-]{11})/,
+      /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
+      /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
+      /[?&]v=([a-zA-Z0-9_-]{11})/
+    ];
+    for(var i=0;i<patterns.length;i++){
+      var m = raw.match(patterns[i]);
+      if(m) return m[1];
+    }
+    if(/^[a-zA-Z0-9_-]{11}$/.test(raw)) return raw;
+    return null;
+  }
+
+  function fmt(t){
+    t = Math.max(0, Math.floor(t||0));
+    var h = Math.floor(t/3600), m = Math.floor((t%3600)/60), s = t%60;
+    var ss = s<10 ? '0'+s : ''+s;
+    if(h>0){ var mm = m<10 ? '0'+m : ''+m; return h+':'+mm+':'+ss; }
+    return m+':'+ss;
+  }
+
+  function storageKey(id){ return 'ytnotes:' + id; }
+
+  function loadNotes(id){
+    try{ var raw = localStorage.getItem(storageKey(id)); return raw ? JSON.parse(raw) : []; }
+    catch(e){ return []; }
+  }
+
+  function saveNotes(id, notes){
+    try{ localStorage.setItem(storageKey(id), JSON.stringify(notes)); }catch(e){}
+  }
+
+  function createOrLoad(id){
+    emptyState.style.display = 'none';
+    if(player && typeof player.loadVideoById === 'function'){
+      player.loadVideoById(id);
+    } else {
+      videoWrap.innerHTML = '<div id="player"></div>';
+      player = new YT.Player('player', {
+        videoId: id,
+        playerVars: { playsinline: 1, enablejsapi: 1, rel: 0 },
+        events: {
+          onReady: function(){ addBtn.disabled = false; startTicking(); },
+          onStateChange: function(){ /* no-op, ticking handles display */ }
+        }
+      });
+    }
+    videoId = id;
+    renderNotes();
+  }
+
+  function loadVideo(){
+    var id = extractId(urlInput.value);
+    if(!id){ alert('Could not find a valid YouTube video in that link.'); return; }
+    if(!apiReady){ pendingVideoId = id; apiStatus.textContent = 'Waiting for player API…'; return; }
+    createOrLoad(id);
+  }
+
+  function startTicking(){
+    if(tickTimer) clearInterval(tickTimer);
+    tickTimer = setInterval(function(){
+      if(player && typeof player.getCurrentTime === 'function'){
+        var t = player.getCurrentTime();
+        if(typeof t === 'number') timeLive.textContent = 'Current position: ' + fmt(t);
+      }
+    }, 500);
+  }
+
+  function addNote(){
+    if(!videoId || !player || typeof player.getCurrentTime !== 'function'){
+      alert('Load a video first.'); return;
+    }
+    var text = noteText.value.trim();
+    if(!text){ alert('Write a note before adding it.'); return; }
+    var t = Math.floor(player.getCurrentTime());
+    var notes = loadNotes(videoId);
+    notes.push({ id:'n'+Date.now()+Math.random().toString(36).slice(2,6), time:t, text:text });
+    saveNotes(videoId, notes);
+    noteText.value = '';
+    renderNotes();
+  }
+
+  function seekTo(t){
+    if(player && typeof player.seekTo === 'function'){
+      player.seekTo(t, true);
+      player.playVideo();
+    }
+  }
+
+  function deleteNote(id){
+    if(!confirm('Delete this note?')) return;
+    var notes = loadNotes(videoId).filter(function(n){ return n.id !== id; });
+    saveNotes(videoId, notes);
+    renderNotes();
+  }
+
+  function renderNotes(){
+    notesList.innerHTML = '';
+    if(!videoId){
+      noteCount.textContent = '';
+      var p = document.createElement('div');
+      p.className = 'no-notes';
+      p.textContent = 'Load a video to start taking notes.';
+      notesList.appendChild(p);
+      return;
+    }
+    var notes = loadNotes(videoId).slice().sort(function(a,b){ return a.time - b.time; });
+    noteCount.textContent = notes.length + (notes.length === 1 ? ' note' : ' notes');
+    if(notes.length === 0){
+      var p2 = document.createElement('div');
+      p2.className = 'no-notes';
+      p2.textContent = 'No notes yet for this video.';
+      notesList.appendChild(p2);
+      return;
+    }
+    notes.forEach(function(n){
+      var row = document.createElement('div');
+      row.className = 'note';
+
+      var timeBtn = document.createElement('button');
+      timeBtn.className = 'note-time';
+      timeBtn.textContent = fmt(n.time);
+      timeBtn.addEventListener('click', function(){ seekTo(n.time); });
+
+      var body = document.createElement('div');
+      body.className = 'note-body';
+
+      var textDiv = document.createElement('div');
+      textDiv.className = 'note-text';
+      textDiv.textContent = n.text;
+
+      var actions = document.createElement('div');
+      actions.className = 'note-actions';
+
+      var editBtn = document.createElement('button');
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', function(){ openEdit(n, body); });
+
+      var delBtn = document.createElement('button');
+      delBtn.textContent = 'Delete';
+      delBtn.addEventListener('click', function(){ deleteNote(n.id); });
+
+      actions.appendChild(editBtn);
+      actions.appendChild(delBtn);
+      body.appendChild(textDiv);
+      body.appendChild(actions);
+
+      row.appendChild(timeBtn);
+      row.appendChild(body);
+      notesList.appendChild(row);
+    });
+  }
+
+  function openEdit(n, body){
+    body.innerHTML = '';
+    var editDiv = document.createElement('div');
+    editDiv.className = 'note-edit';
+
+    var ta = document.createElement('textarea');
+    ta.value = n.text;
+
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'primary';
+    saveBtn.textContent = 'Save';
+    saveBtn.style.marginRight = '8px';
+    saveBtn.addEventListener('click', function(){
+      var newText = ta.value.trim();
+      if(!newText){ alert('Note cannot be empty.'); return; }
+      var notes = loadNotes(videoId);
+      var idx = notes.findIndex(function(x){ return x.id === n.id; });
+      if(idx > -1){ notes[idx].text = newText; saveNotes(videoId, notes); }
+      renderNotes();
+    });
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', renderNotes);
+
+    editDiv.appendChild(ta);
+    var btnRow = document.createElement('div');
+    btnRow.appendChild(saveBtn);
+    btnRow.appendChild(cancelBtn);
+    editDiv.appendChild(btnRow);
+    body.appendChild(editDiv);
+  }
+
+  document.getElementById('loadBtn').addEventListener('click', loadVideo);
+  urlInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') loadVideo(); });
+  addBtn.addEventListener('click', addNote);
+
+  renderNotes();
+</script>
+</body>
+</html>
