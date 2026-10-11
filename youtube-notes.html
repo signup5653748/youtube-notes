@@ -30,7 +30,48 @@
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   }
   .wrap{ max-width:720px; margin:0 auto; padding:16px 16px 48px; }
-  h1{ font-size:1.25rem; margin:4px 0 16px; }
+  h1{ font-size:1.25rem; margin:0; }
+  .header-row{ display:flex; justify-content:space-between; align-items:center; margin:4px 0 16px; }
+  .icon-btn{
+    background:none; border:1px solid var(--border); border-radius:8px; width:36px; height:36px;
+    font-size:1.2rem; line-height:1; padding:0; display:flex; align-items:center; justify-content:center;
+  }
+  .icon-btn.small{ width:26px; height:26px; font-size:1rem; border:none; background:var(--surface-2); }
+  .menu-wrap{ position:relative; }
+  .dropdown{
+    position:absolute; right:0; top:calc(100% + 6px); background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,.18); min-width:170px; z-index:30; overflow:hidden;
+  }
+  .dropdown button{
+    display:block; width:100%; text-align:left; border:none; background:none; border-radius:0;
+    padding:10px 12px; font-size:0.88rem;
+  }
+  .dropdown button:hover{ background:var(--surface-2); }
+  .note-menu-wrap{ position:relative; flex:none; }
+  .note-dropdown{
+    position:absolute; right:0; top:calc(100% + 4px); background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,.18); min-width:120px; z-index:30; overflow:hidden;
+  }
+  .note-dropdown button{
+    display:block; width:100%; text-align:left; border:none; background:none; border-radius:0;
+    padding:8px 10px; font-size:0.85rem;
+  }
+  .note-dropdown button:hover{ background:var(--surface-2); }
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.5); align-items:center; justify-content:center;
+    padding:20px; z-index:50; display:flex;
+  }
+  .modal-overlay[hidden]{ display:none; }
+  .modal-box{ background:var(--surface); border-radius:var(--radius); padding:16px; width:100%; max-width:440px; }
+  .modal-box h2{ margin:0 0 6px; font-size:1rem; }
+  .modal-actions{ display:flex; gap:8px; justify-content:flex-end; }
+  #importTextarea{ min-height:130px; }
+  .toast{
+    position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(20px);
+    background:var(--text); color:var(--bg); padding:8px 14px; border-radius:8px; font-size:0.85rem;
+    opacity:0; pointer-events:none; transition:opacity .2s, transform .2s; z-index:60;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
   .row{ display:flex; gap:8px; }
   input[type=text]{
     flex:1; min-width:0; padding:10px 12px; border-radius:8px; border:1px solid var(--border);
@@ -89,7 +130,16 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>📝 YouTube Video Notes</h1>
+  <div class="header-row">
+    <h1>📝 YouTube Video Notes</h1>
+    <div class="menu-wrap" id="headerMenuWrap">
+      <button class="icon-btn" id="headerMenuBtn" aria-label="More options">⋮</button>
+      <div class="dropdown" id="headerDropdown" hidden>
+        <button id="copyBtn">📋 Copy notes</button>
+        <button id="importBtn">📥 Import notes</button>
+      </div>
+    </div>
+  </div>
 
   <div class="row">
     <input type="text" id="urlInput" placeholder="Paste a YouTube video URL…">
@@ -120,6 +170,18 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="importOverlay" hidden>
+  <div class="modal-box">
+    <h2>Import notes</h2>
+    <p class="hint" style="margin-top:0;">Paste text copied from "Copy notes" (here or on another device) — the URL line and timestamps will be restored.</p>
+    <textarea id="importTextarea" placeholder="URL: https://youtu.be/...&#10;[1:23] Note text"></textarea>
+    <div class="modal-actions">
+      <button id="importCancelBtn">Cancel</button>
+      <button class="primary" id="importConfirmBtn">Import</button>
+    </div>
+  </div>
+</div>
+
 <script>
   var apiReady = false;
   var player = null;
@@ -136,6 +198,14 @@
   var addBtn = document.getElementById('addBtn');
   var notesList = document.getElementById('notesList');
   var noteCount = document.getElementById('noteCount');
+  var headerMenuBtn = document.getElementById('headerMenuBtn');
+  var headerDropdown = document.getElementById('headerDropdown');
+  var copyBtn = document.getElementById('copyBtn');
+  var importBtn = document.getElementById('importBtn');
+  var importOverlay = document.getElementById('importOverlay');
+  var importTextarea = document.getElementById('importTextarea');
+  var importCancelBtn = document.getElementById('importCancelBtn');
+  var importConfirmBtn = document.getElementById('importConfirmBtn');
 
   // Load the official YouTube IFrame Player API (reliable getCurrentTime, no postMessage guesswork)
   var tag = document.createElement('script');
@@ -208,6 +278,10 @@
   function loadVideo(){
     var id = extractId(urlInput.value);
     if(!id){ alert('Could not find a valid YouTube video in that link.'); return; }
+    loadVideoFromId(id);
+  }
+
+  function loadVideoFromId(id){
     if(!apiReady){ pendingVideoId = id; apiStatus.textContent = 'Waiting for player API…'; return; }
     createOrLoad(id);
   }
@@ -285,26 +359,59 @@
       textDiv.className = 'note-text';
       textDiv.textContent = n.text;
 
-      var actions = document.createElement('div');
-      actions.className = 'note-actions';
-
-      var editBtn = document.createElement('button');
-      editBtn.textContent = 'Edit';
-      editBtn.addEventListener('click', function(){ openEdit(n, body); });
-
-      var delBtn = document.createElement('button');
-      delBtn.textContent = 'Delete';
-      delBtn.addEventListener('click', function(){ deleteNote(n.id); });
-
-      actions.appendChild(editBtn);
-      actions.appendChild(delBtn);
       body.appendChild(textDiv);
-      body.appendChild(actions);
+
+      var menuWrap = document.createElement('div');
+      menuWrap.className = 'note-menu-wrap';
+
+      var menuBtn = document.createElement('button');
+      menuBtn.className = 'icon-btn small';
+      menuBtn.textContent = '⋮';
+      menuBtn.setAttribute('aria-label', 'Note options');
+
+      var dropdown = document.createElement('div');
+      dropdown.className = 'note-dropdown';
+      dropdown.hidden = true;
+
+      var editOpt = document.createElement('button');
+      editOpt.textContent = '✎ Edit';
+      editOpt.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        dropdown.hidden = true;
+        openEdit(n, body);
+      });
+
+      var delOpt = document.createElement('button');
+      delOpt.textContent = '🗑 Delete';
+      delOpt.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        dropdown.hidden = true;
+        deleteNote(n.id);
+      });
+
+      dropdown.appendChild(editOpt);
+      dropdown.appendChild(delOpt);
+
+      menuBtn.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        var wasHidden = dropdown.hidden;
+        closeAllMenus();
+        dropdown.hidden = !wasHidden;
+      });
+
+      menuWrap.appendChild(menuBtn);
+      menuWrap.appendChild(dropdown);
 
       row.appendChild(timeBtn);
       row.appendChild(body);
+      row.appendChild(menuWrap);
       notesList.appendChild(row);
     });
+  }
+
+  function closeAllMenus(){
+    document.querySelectorAll('.note-dropdown').forEach(function(d){ d.hidden = true; });
+    headerDropdown.hidden = true;
   }
 
   function openEdit(n, body){
@@ -340,9 +447,134 @@
     body.appendChild(editDiv);
   }
 
+  function parseTime(str){
+    if(!str) return null;
+    str = str.trim();
+    if(/^\d+$/.test(str)) return parseInt(str,10);
+    var parts = str.split(':').map(function(p){ return parseInt(p,10); });
+    if(parts.some(isNaN)) return null;
+    var secs = 0;
+    for(var i=0;i<parts.length;i++){ secs = secs*60 + parts[i]; }
+    return secs;
+  }
+
+  function buildExportText(){
+    var lines = [];
+    if(videoId) lines.push('URL: https://youtu.be/' + videoId);
+    var notes = videoId ? loadNotes(videoId).slice().sort(function(a,b){ return a.time-b.time; }) : [];
+    notes.forEach(function(n){ lines.push('[' + fmt(n.time) + '] ' + n.text.replace(/\n/g,' ')); });
+    return lines.join('\n');
+  }
+
+  function parseImportText(text){
+    var lines = text.split(/\r?\n/);
+    var url = null;
+    var notes = [];
+    var re = /^\[(\d{1,2}(?::\d{2}){1,2})\]\s*(.*)$/;
+    lines.forEach(function(line){
+      line = line.trim();
+      if(!line) return;
+      var um = line.match(/^URL:\s*(\S+)/i);
+      if(um){ url = um[1]; return; }
+      var m = line.match(re);
+      if(m){
+        var t = parseTime(m[1]);
+        if(t !== null && m[2]) notes.push({ time:t, text:m[2] });
+      }
+    });
+    return { url:url, notes:notes };
+  }
+
+  function toast(msg){
+    var t = document.getElementById('toast');
+    if(!t){ t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; document.body.appendChild(t); }
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._hideTimer);
+    t._hideTimer = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  function fallbackCopy(text){
+    try{
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      toast('Copied to clipboard');
+    }catch(e){
+      alert('Could not copy automatically. Select and copy manually:\n\n' + text);
+    }
+  }
+
+  function copyText(text){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){ toast('Copied to clipboard'); }).catch(function(){ fallbackCopy(text); });
+    } else {
+      fallbackCopy(text);
+    }
+  }
+
+  function performImport(){
+    var text = importTextarea.value;
+    var parsed = parseImportText(text);
+    if(!parsed.notes.length && !parsed.url){ alert('No valid data found to import.'); return; }
+    var newId = parsed.url ? extractId(parsed.url) : null;
+    var targetId = newId || videoId;
+    if(!targetId){ alert('Load a video first, or include a "URL:" line in the pasted text.'); return; }
+    var existing = loadNotes(targetId);
+    var added = 0;
+    parsed.notes.forEach(function(n){
+      var dup = existing.some(function(e){ return e.time === n.time && e.text === n.text; });
+      if(!dup){
+        existing.push({ id:'n'+Date.now()+Math.random().toString(36).slice(2,6), time:n.time, text:n.text });
+        added++;
+      }
+    });
+    saveNotes(targetId, existing);
+    importOverlay.hidden = true;
+    importTextarea.value = '';
+    if(newId && newId !== videoId){
+      urlInput.value = parsed.url;
+      loadVideoFromId(newId);
+    } else {
+      renderNotes();
+    }
+    toast('Imported ' + added + ' note' + (added===1 ? '' : 's'));
+  }
+
   document.getElementById('loadBtn').addEventListener('click', loadVideo);
   urlInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') loadVideo(); });
   addBtn.addEventListener('click', addNote);
+
+  headerMenuBtn.addEventListener('click', function(ev){
+    ev.stopPropagation();
+    var wasHidden = headerDropdown.hidden;
+    closeAllMenus();
+    headerDropdown.hidden = !wasHidden;
+  });
+
+  copyBtn.addEventListener('click', function(){
+    closeAllMenus();
+    if(!videoId){ alert('Load a video first.'); return; }
+    copyText(buildExportText());
+  });
+
+  importBtn.addEventListener('click', function(){
+    closeAllMenus();
+    importTextarea.value = '';
+    importOverlay.hidden = false;
+    importTextarea.focus();
+  });
+
+  importCancelBtn.addEventListener('click', function(){ importOverlay.hidden = true; });
+  importConfirmBtn.addEventListener('click', performImport);
+  importOverlay.addEventListener('click', function(ev){ if(ev.target === importOverlay) importOverlay.hidden = true; });
+
+  document.addEventListener('click', closeAllMenus);
 
   renderNotes();
 </script>
