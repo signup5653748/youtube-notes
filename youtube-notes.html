@@ -29,12 +29,12 @@
     margin:0; background:var(--bg); color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   }
-  .wrap{ max-width:720px; margin:0 auto; padding:16px 16px 48px; }
+  .wrap{ max-width:720px; margin:0 auto; padding:16px 16px 100px; position:relative; min-height:100vh; }
   h1{ font-size:1.25rem; margin:0; }
-  .header-row{ display:flex; justify-content:space-between; align-items:center; margin:4px 0 16px; }
+  .header-row{ display:flex; justify-content:space-between; align-items:center; margin:4px 0 16px; gap:10px; }
   .icon-btn{
     background:none; border:1px solid var(--border); border-radius:8px; width:36px; height:36px;
-    font-size:1.2rem; line-height:1; padding:0; display:flex; align-items:center; justify-content:center;
+    font-size:1.2rem; line-height:1; padding:0; display:flex; align-items:center; justify-content:center; flex:none;
   }
   .icon-btn.small{ width:26px; height:26px; font-size:1rem; border:none; background:var(--surface-2); }
   .menu-wrap{ position:relative; }
@@ -42,138 +42,134 @@
     position:absolute; right:0; top:calc(100% + 6px); background:var(--surface); border:1px solid var(--border);
     border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,.18); min-width:170px; z-index:30; overflow:hidden;
   }
-  .dropdown button{
-    display:block; width:100%; text-align:left; border:none; background:none; border-radius:0;
-    padding:10px 12px; font-size:0.88rem;
-  }
+  .dropdown button{ display:block; width:100%; text-align:left; border:none; background:none; border-radius:0; padding:10px 12px; font-size:0.88rem; }
   .dropdown button:hover{ background:var(--surface-2); }
   .note-menu-wrap{ position:relative; flex:none; }
   .note-dropdown{
     position:absolute; right:0; top:calc(100% + 4px); background:var(--surface); border:1px solid var(--border);
     border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,.18); min-width:120px; z-index:30; overflow:hidden;
   }
-  .note-dropdown button{
-    display:block; width:100%; text-align:left; border:none; background:none; border-radius:0;
-    padding:8px 10px; font-size:0.85rem;
-  }
+  .note-dropdown button{ display:block; width:100%; text-align:left; border:none; background:none; border-radius:0; padding:8px 10px; font-size:0.85rem; }
   .note-dropdown button:hover{ background:var(--surface-2); }
-  .modal-overlay{
-    position:fixed; inset:0; background:rgba(0,0,0,.5); align-items:center; justify-content:center;
-    padding:20px; z-index:50; display:flex;
-  }
-  .modal-overlay[hidden]{ display:none; }
-  .modal-box{ background:var(--surface); border-radius:var(--radius); padding:16px; width:100%; max-width:440px; }
-  .modal-box h2{ margin:0 0 6px; font-size:1rem; }
-  .modal-actions{ display:flex; gap:8px; justify-content:flex-end; }
-  #importTextarea{ min-height:130px; }
-  .toast{
-    position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(20px);
-    background:var(--text); color:var(--bg); padding:8px 14px; border-radius:8px; font-size:0.85rem;
-    opacity:0; pointer-events:none; transition:opacity .2s, transform .2s; z-index:60;
-  }
-  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
-  .row{ display:flex; gap:8px; }
-  input[type=text]{
-    flex:1; min-width:0; padding:10px 12px; border-radius:8px; border:1px solid var(--border);
-    background:var(--surface); color:var(--text); font-size:0.95rem;
-  }
-  button{
-    font:inherit; cursor:pointer; border:1px solid var(--border); background:var(--surface-2);
-    color:var(--text); border-radius:8px; padding:10px 14px;
-  }
+  button{ font:inherit; cursor:pointer; border:1px solid var(--border); background:var(--surface-2); color:var(--text); border-radius:8px; padding:10px 14px; }
   button.primary{ background:var(--accent); color:var(--accent-text); border-color:var(--accent); }
   button:active{ opacity:0.8; }
   button:disabled{ opacity:0.5; cursor:not-allowed; }
-  .video-wrap{
-    position:relative; width:100%; padding-top:56.25%; background:#000;
-    border-radius:var(--radius); overflow:hidden; margin:16px 0 4px;
+  input[type=text]{ flex:1; min-width:0; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:0.95rem; }
+  textarea{ width:100%; min-height:60px; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); font:inherit; resize:vertical; margin-bottom:10px; }
+
+  /* Home screen */
+  .video-card{ display:flex; gap:12px; align-items:center; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:10px; margin-bottom:10px; cursor:pointer; }
+  .video-thumb{ width:96px; height:54px; object-fit:cover; border-radius:8px; background:var(--surface-2); flex:none; }
+  .video-info{ flex:1; min-width:0; }
+  .video-title{ font-size:0.92rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .video-count{ font-size:0.78rem; color:var(--text-muted); margin-top:2px; }
+  .fab{
+    position:fixed; right:20px; bottom:calc(20px + env(safe-area-inset-bottom,0px)); width:56px; height:56px;
+    border-radius:50%; background:var(--accent); color:var(--accent-text); border:none; font-size:1.8rem;
+    display:flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(0,0,0,.25); z-index:20;
   }
+  .no-notes{ color:var(--text-muted); font-size:0.88rem; padding:6px 0; }
+
+  /* Detail view */
+  .detail-header{ display:flex; align-items:center; gap:10px; margin:4px 0 16px; }
+  .detail-title{ flex:1; min-width:0; font-size:1.05rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .video-wrap{ position:relative; width:100%; padding-top:56.25%; background:#000; border-radius:var(--radius); overflow:hidden; margin:0 0 4px; }
   .video-wrap iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; }
   #player{ position:absolute; inset:0; width:100%; height:100%; }
-  .empty-state{
-    display:flex; align-items:center; justify-content:center; height:100%;
-    position:absolute; inset:0; color:#999; font-size:0.9rem; padding:0 20px; text-align:center;
-  }
   .status-row{ display:flex; justify-content:space-between; align-items:center; margin:6px 2px 16px; }
   .time-live{ font-size:0.82rem; color:var(--text-muted); font-variant-numeric:tabular-nums; }
   .api-status{ font-size:0.75rem; color:var(--text-muted); }
-  .panel{
-    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
-    padding:14px; margin-bottom:20px;
-  }
+  .panel{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:20px; }
   .panel h2{ font-size:0.95rem; margin:0 0 10px; }
-  textarea{
-    width:100%; min-height:60px; padding:10px 12px; border-radius:8px; border:1px solid var(--border);
-    background:var(--surface); color:var(--text); font:inherit; resize:vertical; margin-bottom:10px;
-  }
   .notes-header{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; }
   .notes-header h2{ margin:0; }
   .count{ color:var(--text-muted); font-size:0.85rem; }
-  .note{
-    display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-top:1px solid var(--border);
-  }
+  .note{ display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-top:1px solid var(--border); }
   .note:first-child{ border-top:none; }
-  .note-time{
-    flex:none; background:var(--surface-2); border:1px solid var(--border); color:var(--text);
-    border-radius:7px; padding:6px 9px; font-size:0.82rem; font-variant-numeric:tabular-nums;
-    cursor:pointer;
-  }
+  .note-time{ flex:none; background:var(--surface-2); border:1px solid var(--border); color:var(--text); border-radius:7px; padding:6px 9px; font-size:0.82rem; font-variant-numeric:tabular-nums; cursor:pointer; }
   .note-body{ flex:1; min-width:0; }
   .note-text{ white-space:pre-wrap; word-break:break-word; font-size:0.92rem; line-height:1.35; }
-  .note-actions{ display:flex; gap:10px; margin-top:4px; }
-  .note-actions button{ padding:3px 8px; font-size:0.78rem; background:none; border:none; color:var(--text-muted); }
-  .note-actions button:hover{ color:var(--text); }
   .note-edit textarea{ margin-bottom:6px; min-height:50px; }
-  .no-notes{ color:var(--text-muted); font-size:0.88rem; padding:6px 0; }
-  .hint{ color:var(--text-muted); font-size:0.78rem; margin-top:-8px; margin-bottom:16px; }
+
+  /* Modals */
+  .modal-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.5); align-items:center; justify-content:center; padding:20px; z-index:50; display:flex; }
+  .modal-overlay[hidden]{ display:none; }
+  .modal-box{ background:var(--surface); border-radius:var(--radius); padding:16px; width:100%; max-width:440px; }
+  .modal-box h2{ margin:0 0 10px; font-size:1rem; }
+  .modal-actions{ display:flex; gap:8px; justify-content:flex-end; margin-top:10px; }
+  #importTextarea{ min-height:130px; }
+  .toast{
+    position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(20px); background:var(--text); color:var(--bg);
+    padding:8px 14px; border-radius:8px; font-size:0.85rem; opacity:0; pointer-events:none; transition:opacity .2s, transform .2s; z-index:60;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="header-row">
-    <h1>📝 YouTube Video Notes</h1>
-    <div class="menu-wrap" id="headerMenuWrap">
-      <button class="icon-btn" id="headerMenuBtn" aria-label="More options">⋮</button>
-      <div class="dropdown" id="headerDropdown" hidden>
-        <button id="copyBtn">📋 Copy notes</button>
-        <button id="importBtn">📥 Import notes</button>
+
+  <!-- HOME SCREEN -->
+  <div id="homeView">
+    <div class="header-row">
+      <h1>📝 YouTube Video Notes</h1>
+    </div>
+    <div id="videoList"></div>
+  </div>
+  <button class="fab" id="fabBtn" aria-label="Add video">＋</button>
+
+  <!-- DETAIL VIEW -->
+  <div id="detailView" hidden>
+    <div class="detail-header">
+      <button class="icon-btn" id="backBtn" aria-label="Back">←</button>
+      <div class="detail-title" id="detailTitle">Video</div>
+      <div class="menu-wrap" id="headerMenuWrap">
+        <button class="icon-btn" id="headerMenuBtn" aria-label="More options">⋮</button>
+        <div class="dropdown" id="headerDropdown" hidden>
+          <button id="copyBtn">📋 Copy notes</button>
+          <button id="importBtn">📥 Import notes</button>
+        </div>
       </div>
     </div>
-  </div>
 
-  <div class="row">
-    <input type="text" id="urlInput" placeholder="Paste a YouTube video URL…">
-    <button class="primary" id="loadBtn">Load</button>
-  </div>
-  <div class="hint">Works with youtube.com/watch, youtu.be, and shorts links.</div>
-
-  <div class="video-wrap" id="videoWrap">
-    <div class="empty-state" id="emptyState">Paste a YouTube link above to start watching</div>
-  </div>
-  <div class="status-row">
-    <span class="time-live" id="timeLive"></span>
-    <span class="api-status" id="apiStatus">Loading player API…</span>
-  </div>
-
-  <div class="panel">
-    <h2>Add a note</h2>
-    <textarea id="noteText" placeholder="What's happening right now?"></textarea>
-    <button class="primary" id="addBtn" disabled>➕ Add note at current time</button>
-  </div>
-
-  <div class="panel">
-    <div class="notes-header">
-      <h2>Notes</h2>
-      <span class="count" id="noteCount"></span>
+    <div class="video-wrap" id="videoWrap"></div>
+    <div class="status-row">
+      <span class="time-live" id="timeLive"></span>
+      <span class="api-status" id="apiStatus">Loading player API…</span>
     </div>
-    <div id="notesList"></div>
+
+    <div class="panel">
+      <h2>Add a note</h2>
+      <textarea id="noteText" placeholder="What's happening right now?"></textarea>
+      <button class="primary" id="addBtn" disabled>➕ Add note at current time</button>
+    </div>
+
+    <div class="panel">
+      <div class="notes-header">
+        <h2>Notes</h2>
+        <span class="count" id="noteCount"></span>
+      </div>
+      <div id="notesList"></div>
+    </div>
   </div>
 </div>
 
+<!-- Add video modal -->
+<div class="modal-overlay" id="addOverlay" hidden>
+  <div class="modal-box">
+    <h2>Add a video</h2>
+    <input type="text" id="addUrlInput" placeholder="Paste a YouTube video URL…">
+    <div class="modal-actions">
+      <button id="addCancelBtn">Cancel</button>
+      <button class="primary" id="addConfirmBtn">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import notes modal -->
 <div class="modal-overlay" id="importOverlay" hidden>
   <div class="modal-box">
     <h2>Import notes</h2>
-    <p class="hint" style="margin-top:0;">Paste text copied from "Copy notes" (here or on another device) — the URL line and timestamps will be restored.</p>
     <textarea id="importTextarea" placeholder="URL: https://youtu.be/...&#10;[1:23] Note text"></textarea>
     <div class="modal-actions">
       <button id="importCancelBtn">Cancel</button>
@@ -183,17 +179,17 @@
 </div>
 
 <script>
-  var apiReady = false;
-  var player = null;
-  var videoId = null;
-  var pendingVideoId = null;
-  var tickTimer = null;
+  var apiReady = false, player = null, videoId = null, pendingVideoId = null, tickTimer = null;
 
+  var homeView = document.getElementById('homeView');
+  var detailView = document.getElementById('detailView');
+  var videoListEl = document.getElementById('videoList');
+  var fabBtn = document.getElementById('fabBtn');
+  var backBtn = document.getElementById('backBtn');
+  var detailTitleEl = document.getElementById('detailTitle');
   var videoWrap = document.getElementById('videoWrap');
-  var emptyState = document.getElementById('emptyState');
   var timeLive = document.getElementById('timeLive');
   var apiStatus = document.getElementById('apiStatus');
-  var urlInput = document.getElementById('urlInput');
   var noteText = document.getElementById('noteText');
   var addBtn = document.getElementById('addBtn');
   var notesList = document.getElementById('notesList');
@@ -206,8 +202,11 @@
   var importTextarea = document.getElementById('importTextarea');
   var importCancelBtn = document.getElementById('importCancelBtn');
   var importConfirmBtn = document.getElementById('importConfirmBtn');
+  var addOverlay = document.getElementById('addOverlay');
+  var addUrlInput = document.getElementById('addUrlInput');
+  var addCancelBtn = document.getElementById('addCancelBtn');
+  var addConfirmBtn = document.getElementById('addConfirmBtn');
 
-  // Load the official YouTube IFrame Player API (reliable getCurrentTime, no postMessage guesswork)
   var tag = document.createElement('script');
   tag.src = 'https://www.youtube.com/iframe_api';
   document.head.appendChild(tag);
@@ -229,10 +228,7 @@
       /youtube\.com\/live\/([a-zA-Z0-9_-]{11})/,
       /[?&]v=([a-zA-Z0-9_-]{11})/
     ];
-    for(var i=0;i<patterns.length;i++){
-      var m = raw.match(patterns[i]);
-      if(m) return m[1];
-    }
+    for(var i=0;i<patterns.length;i++){ var m = raw.match(patterns[i]); if(m) return m[1]; }
     if(/^[a-zA-Z0-9_-]{11}$/.test(raw)) return raw;
     return null;
   }
@@ -245,19 +241,130 @@
     return m+':'+ss;
   }
 
-  function storageKey(id){ return 'ytnotes:' + id; }
-
-  function loadNotes(id){
-    try{ var raw = localStorage.getItem(storageKey(id)); return raw ? JSON.parse(raw) : []; }
-    catch(e){ return []; }
+  function parseTime(str){
+    if(!str) return null;
+    str = str.trim();
+    if(/^\d+$/.test(str)) return parseInt(str,10);
+    var parts = str.split(':').map(function(p){ return parseInt(p,10); });
+    if(parts.some(isNaN)) return null;
+    var secs = 0;
+    for(var i=0;i<parts.length;i++){ secs = secs*60 + parts[i]; }
+    return secs;
   }
 
-  function saveNotes(id, notes){
-    try{ localStorage.setItem(storageKey(id), JSON.stringify(notes)); }catch(e){}
+  function storageKey(id){ return 'ytnotes:' + id; }
+  function loadNotes(id){ try{ var raw = localStorage.getItem(storageKey(id)); return raw ? JSON.parse(raw) : []; }catch(e){ return []; } }
+  function saveNotes(id, notes){ try{ localStorage.setItem(storageKey(id), JSON.stringify(notes)); }catch(e){} }
+
+  function loadVideosList(){ try{ var raw = localStorage.getItem('ytnotes:videos'); return raw ? JSON.parse(raw) : []; }catch(e){ return []; } }
+  function saveVideosList(list){ try{ localStorage.setItem('ytnotes:videos', JSON.stringify(list)); }catch(e){} }
+
+  function addOrTouchVideo(id){
+    var list = loadVideosList();
+    var idx = list.findIndex(function(v){ return v.id === id; });
+    if(idx === -1){ list.unshift({ id:id, title:'YouTube video', addedAt:Date.now() }); }
+    else { var item = list.splice(idx,1)[0]; list.unshift(item); }
+    saveVideosList(list);
+  }
+
+  function updateVideoTitle(id, title){
+    var list = loadVideosList();
+    var idx = list.findIndex(function(v){ return v.id === id; });
+    if(idx > -1 && list[idx].title !== title){ list[idx].title = title; saveVideosList(list); }
+    if(videoId === id) detailTitleEl.textContent = title;
+  }
+
+  function deleteVideo(id){
+    if(!confirm('Delete this video and all its notes?')) return;
+    saveVideosList(loadVideosList().filter(function(v){ return v.id !== id; }));
+    try{ localStorage.removeItem(storageKey(id)); }catch(e){}
+    renderHome();
+  }
+
+  function closeAllMenus(){
+    document.querySelectorAll('.note-dropdown').forEach(function(d){ d.hidden = true; });
+    headerDropdown.hidden = true;
+  }
+
+  function renderHome(){
+    videoListEl.innerHTML = '';
+    var list = loadVideosList();
+    if(list.length === 0){
+      var p = document.createElement('div');
+      p.className = 'no-notes';
+      p.textContent = 'No videos yet — tap + to add one.';
+      videoListEl.appendChild(p);
+      return;
+    }
+    list.forEach(function(v){
+      var card = document.createElement('div');
+      card.className = 'video-card';
+
+      var thumb = document.createElement('img');
+      thumb.className = 'video-thumb';
+      thumb.src = 'https://img.youtube.com/vi/' + v.id + '/hqdefault.jpg';
+      thumb.alt = '';
+
+      var info = document.createElement('div');
+      info.className = 'video-info';
+      var titleEl = document.createElement('div');
+      titleEl.className = 'video-title';
+      titleEl.textContent = v.title || 'YouTube video';
+      var n = loadNotes(v.id).length;
+      var countEl = document.createElement('div');
+      countEl.className = 'video-count';
+      countEl.textContent = n + (n === 1 ? ' note' : ' notes');
+      info.appendChild(titleEl);
+      info.appendChild(countEl);
+
+      var menuWrap = document.createElement('div');
+      menuWrap.className = 'note-menu-wrap';
+      var menuBtn = document.createElement('button');
+      menuBtn.className = 'icon-btn small';
+      menuBtn.textContent = '⋮';
+      menuBtn.setAttribute('aria-label', 'Video options');
+      var dropdown = document.createElement('div');
+      dropdown.className = 'note-dropdown';
+      dropdown.hidden = true;
+      var delOpt = document.createElement('button');
+      delOpt.textContent = '🗑 Delete';
+      delOpt.addEventListener('click', function(ev){ ev.stopPropagation(); dropdown.hidden = true; deleteVideo(v.id); });
+      dropdown.appendChild(delOpt);
+      menuBtn.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        var wasHidden = dropdown.hidden;
+        closeAllMenus();
+        dropdown.hidden = !wasHidden;
+      });
+      menuWrap.appendChild(menuBtn);
+      menuWrap.appendChild(dropdown);
+
+      card.appendChild(thumb);
+      card.appendChild(info);
+      card.appendChild(menuWrap);
+      card.addEventListener('click', function(){ openDetail(v.id); });
+      videoListEl.appendChild(card);
+    });
+  }
+
+  function openDetail(id){
+    homeView.style.display = 'none';
+    fabBtn.style.display = 'none';
+    detailView.hidden = false;
+    var entry = loadVideosList().find(function(v){ return v.id === id; });
+    detailTitleEl.textContent = (entry && entry.title) ? entry.title : 'Loading…';
+    loadVideoFromId(id);
+  }
+
+  function showHome(){
+    detailView.hidden = true;
+    homeView.style.display = '';
+    fabBtn.style.display = '';
+    renderHome();
   }
 
   function createOrLoad(id){
-    emptyState.style.display = 'none';
+    addOrTouchVideo(id);
     if(player && typeof player.loadVideoById === 'function'){
       player.loadVideoById(id);
     } else {
@@ -266,8 +373,8 @@
         videoId: id,
         playerVars: { playsinline: 1, enablejsapi: 1, rel: 0 },
         events: {
-          onReady: function(){ addBtn.disabled = false; startTicking(); },
-          onStateChange: function(){ /* no-op, ticking handles display */ }
+          onReady: function(){ addBtn.disabled = false; startTicking(); tryUpdateTitle(); },
+          onStateChange: function(){ tryUpdateTitle(); }
         }
       });
     }
@@ -275,10 +382,13 @@
     renderNotes();
   }
 
-  function loadVideo(){
-    var id = extractId(urlInput.value);
-    if(!id){ alert('Could not find a valid YouTube video in that link.'); return; }
-    loadVideoFromId(id);
+  function tryUpdateTitle(){
+    if(player && typeof player.getVideoData === 'function'){
+      try{
+        var d = player.getVideoData();
+        if(d && d.title){ updateVideoTitle(videoId, d.title); }
+      }catch(e){}
+    }
   }
 
   function loadVideoFromId(id){
@@ -297,9 +407,7 @@
   }
 
   function addNote(){
-    if(!videoId || !player || typeof player.getCurrentTime !== 'function'){
-      alert('Load a video first.'); return;
-    }
+    if(!videoId || !player || typeof player.getCurrentTime !== 'function'){ alert('Load a video first.'); return; }
     var text = noteText.value.trim();
     if(!text){ alert('Write a note before adding it.'); return; }
     var t = Math.floor(player.getCurrentTime());
@@ -311,16 +419,12 @@
   }
 
   function seekTo(t){
-    if(player && typeof player.seekTo === 'function'){
-      player.seekTo(t, true);
-      player.playVideo();
-    }
+    if(player && typeof player.seekTo === 'function'){ player.seekTo(t, true); player.playVideo(); }
   }
 
   function deleteNote(id){
     if(!confirm('Delete this note?')) return;
-    var notes = loadNotes(videoId).filter(function(n){ return n.id !== id; });
-    saveNotes(videoId, notes);
+    saveNotes(videoId, loadNotes(videoId).filter(function(n){ return n.id !== id; }));
     renderNotes();
   }
 
@@ -354,51 +458,34 @@
 
       var body = document.createElement('div');
       body.className = 'note-body';
-
       var textDiv = document.createElement('div');
       textDiv.className = 'note-text';
       textDiv.textContent = n.text;
-
       body.appendChild(textDiv);
 
       var menuWrap = document.createElement('div');
       menuWrap.className = 'note-menu-wrap';
-
       var menuBtn = document.createElement('button');
       menuBtn.className = 'icon-btn small';
       menuBtn.textContent = '⋮';
       menuBtn.setAttribute('aria-label', 'Note options');
-
       var dropdown = document.createElement('div');
       dropdown.className = 'note-dropdown';
       dropdown.hidden = true;
-
       var editOpt = document.createElement('button');
       editOpt.textContent = '✎ Edit';
-      editOpt.addEventListener('click', function(ev){
-        ev.stopPropagation();
-        dropdown.hidden = true;
-        openEdit(n, body);
-      });
-
+      editOpt.addEventListener('click', function(ev){ ev.stopPropagation(); dropdown.hidden = true; openEdit(n, body); });
       var delOpt = document.createElement('button');
       delOpt.textContent = '🗑 Delete';
-      delOpt.addEventListener('click', function(ev){
-        ev.stopPropagation();
-        dropdown.hidden = true;
-        deleteNote(n.id);
-      });
-
+      delOpt.addEventListener('click', function(ev){ ev.stopPropagation(); dropdown.hidden = true; deleteNote(n.id); });
       dropdown.appendChild(editOpt);
       dropdown.appendChild(delOpt);
-
       menuBtn.addEventListener('click', function(ev){
         ev.stopPropagation();
         var wasHidden = dropdown.hidden;
         closeAllMenus();
         dropdown.hidden = !wasHidden;
       });
-
       menuWrap.appendChild(menuBtn);
       menuWrap.appendChild(dropdown);
 
@@ -409,19 +496,12 @@
     });
   }
 
-  function closeAllMenus(){
-    document.querySelectorAll('.note-dropdown').forEach(function(d){ d.hidden = true; });
-    headerDropdown.hidden = true;
-  }
-
   function openEdit(n, body){
     body.innerHTML = '';
     var editDiv = document.createElement('div');
     editDiv.className = 'note-edit';
-
     var ta = document.createElement('textarea');
     ta.value = n.text;
-
     var saveBtn = document.createElement('button');
     saveBtn.className = 'primary';
     saveBtn.textContent = 'Save';
@@ -434,28 +514,15 @@
       if(idx > -1){ notes[idx].text = newText; saveNotes(videoId, notes); }
       renderNotes();
     });
-
     var cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Cancel';
     cancelBtn.addEventListener('click', renderNotes);
-
     editDiv.appendChild(ta);
     var btnRow = document.createElement('div');
     btnRow.appendChild(saveBtn);
     btnRow.appendChild(cancelBtn);
     editDiv.appendChild(btnRow);
     body.appendChild(editDiv);
-  }
-
-  function parseTime(str){
-    if(!str) return null;
-    str = str.trim();
-    if(/^\d+$/.test(str)) return parseInt(str,10);
-    var parts = str.split(':').map(function(p){ return parseInt(p,10); });
-    if(parts.some(isNaN)) return null;
-    var secs = 0;
-    for(var i=0;i<parts.length;i++){ secs = secs*60 + parts[i]; }
-    return secs;
   }
 
   function buildExportText(){
@@ -468,8 +535,7 @@
 
   function parseImportText(text){
     var lines = text.split(/\r?\n/);
-    var url = null;
-    var notes = [];
+    var url = null, notes = [];
     var re = /^\[(\d{1,2}(?::\d{2}){1,2})\]\s*(.*)$/;
     lines.forEach(function(line){
       line = line.trim();
@@ -477,10 +543,7 @@
       var um = line.match(/^URL:\s*(\S+)/i);
       if(um){ url = um[1]; return; }
       var m = line.match(re);
-      if(m){
-        var t = parseTime(m[1]);
-        if(t !== null && m[2]) notes.push({ time:t, text:m[2] });
-      }
+      if(m){ var t = parseTime(m[1]); if(t !== null && m[2]) notes.push({ time:t, text:m[2] }); }
     });
     return { url:url, notes:notes };
   }
@@ -497,57 +560,39 @@
   function fallbackCopy(text){
     try{
       var ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.focus(); ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
       toast('Copied to clipboard');
-    }catch(e){
-      alert('Could not copy automatically. Select and copy manually:\n\n' + text);
-    }
+    }catch(e){ alert('Could not copy automatically. Select and copy manually:\n\n' + text); }
   }
 
   function copyText(text){
     if(navigator.clipboard && navigator.clipboard.writeText){
       navigator.clipboard.writeText(text).then(function(){ toast('Copied to clipboard'); }).catch(function(){ fallbackCopy(text); });
-    } else {
-      fallbackCopy(text);
-    }
+    } else { fallbackCopy(text); }
   }
 
   function performImport(){
-    var text = importTextarea.value;
-    var parsed = parseImportText(text);
+    var parsed = parseImportText(importTextarea.value);
     if(!parsed.notes.length && !parsed.url){ alert('No valid data found to import.'); return; }
     var newId = parsed.url ? extractId(parsed.url) : null;
     var targetId = newId || videoId;
-    if(!targetId){ alert('Load a video first, or include a "URL:" line in the pasted text.'); return; }
+    if(!targetId){ alert('Include a "URL:" line in the pasted text.'); return; }
     var existing = loadNotes(targetId);
     var added = 0;
     parsed.notes.forEach(function(n){
       var dup = existing.some(function(e){ return e.time === n.time && e.text === n.text; });
-      if(!dup){
-        existing.push({ id:'n'+Date.now()+Math.random().toString(36).slice(2,6), time:n.time, text:n.text });
-        added++;
-      }
+      if(!dup){ existing.push({ id:'n'+Date.now()+Math.random().toString(36).slice(2,6), time:n.time, text:n.text }); added++; }
     });
     saveNotes(targetId, existing);
     importOverlay.hidden = true;
     importTextarea.value = '';
-    if(newId && newId !== videoId){
-      urlInput.value = parsed.url;
-      loadVideoFromId(newId);
-    } else {
-      renderNotes();
-    }
+    if(newId && newId !== videoId){ openDetail(newId); } else { renderNotes(); }
     toast('Imported ' + added + ' note' + (added===1 ? '' : 's'));
   }
 
-  document.getElementById('loadBtn').addEventListener('click', loadVideo);
-  urlInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') loadVideo(); });
+  backBtn.addEventListener('click', showHome);
   addBtn.addEventListener('click', addNote);
 
   headerMenuBtn.addEventListener('click', function(ev){
@@ -556,27 +601,25 @@
     closeAllMenus();
     headerDropdown.hidden = !wasHidden;
   });
-
-  copyBtn.addEventListener('click', function(){
-    closeAllMenus();
-    if(!videoId){ alert('Load a video first.'); return; }
-    copyText(buildExportText());
-  });
-
-  importBtn.addEventListener('click', function(){
-    closeAllMenus();
-    importTextarea.value = '';
-    importOverlay.hidden = false;
-    importTextarea.focus();
-  });
-
+  copyBtn.addEventListener('click', function(){ closeAllMenus(); if(videoId) copyText(buildExportText()); });
+  importBtn.addEventListener('click', function(){ closeAllMenus(); importTextarea.value = ''; importOverlay.hidden = false; importTextarea.focus(); });
   importCancelBtn.addEventListener('click', function(){ importOverlay.hidden = true; });
   importConfirmBtn.addEventListener('click', performImport);
   importOverlay.addEventListener('click', function(ev){ if(ev.target === importOverlay) importOverlay.hidden = true; });
 
+  fabBtn.addEventListener('click', function(){ addUrlInput.value = ''; addOverlay.hidden = false; addUrlInput.focus(); });
+  addCancelBtn.addEventListener('click', function(){ addOverlay.hidden = true; });
+  addConfirmBtn.addEventListener('click', function(){
+    var id = extractId(addUrlInput.value);
+    if(!id){ alert('Could not find a valid YouTube video in that link.'); return; }
+    addOverlay.hidden = true;
+    openDetail(id);
+  });
+  addUrlInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') addConfirmBtn.click(); });
+
   document.addEventListener('click', closeAllMenus);
 
-  renderNotes();
+  renderHome();
 </script>
 </body>
 </html>
