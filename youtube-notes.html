@@ -92,6 +92,14 @@
   .note-text{ white-space:pre-wrap; word-break:break-word; font-size:0.92rem; line-height:1.35; }
   .note-edit textarea{ margin-bottom:6px; min-height:50px; }
 
+  /* Player mode indicator */
+  .player-mode{
+    display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.7rem; 
+    background:var(--surface-2); color:var(--text-muted); margin-left:8px;
+  }
+  .player-mode.popup{ background:#fef3c7; color:#92400e; }
+  .player-mode.embed{ background:#d1fae5; color:#065f46; }
+
   /* Modals */
   .modal-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.5); align-items:center; justify-content:center; padding:20px; z-index:50; display:flex; }
   .modal-overlay[hidden]{ display:none; }
@@ -104,6 +112,13 @@
     padding:8px 14px; border-radius:8px; font-size:0.85rem; opacity:0; pointer-events:none; transition:opacity .2s, transform .2s; z-index:60;
   }
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .error-banner{
+    background:#fef2f2; border:1px solid #fecaca; color:#991b1b;
+    padding:10px 12px; border-radius:8px; margin-bottom:12px; font-size:0.85rem;
+  }
+  @media (prefers-color-scheme: dark){
+    .error-banner{ background:#450a0a; border-color:#7f1d1d; color:#fecaca; }
+  }
 </style>
 </head>
 <body>
@@ -112,7 +127,7 @@
   <!-- HOME SCREEN -->
   <div id="homeView">
     <div class="header-row">
-      <h1>📝 YouTube Video Notes</h1>
+      <h1> YouTube Video Notes</h1>
     </div>
     <div id="videoList"></div>
   </div>
@@ -124,14 +139,16 @@
       <button class="icon-btn" id="backBtn" aria-label="Back">←</button>
       <div class="detail-title" id="detailTitle">Video</div>
       <div class="menu-wrap" id="headerMenuWrap">
-        <button class="icon-btn" id="headerMenuBtn" aria-label="More options">⋮</button>
+        <button class="icon-btn" id="headerMenuBtn" aria-label="More options"></button>
         <div class="dropdown" id="headerDropdown" hidden>
+          <button id="popupBtn">🪟 Use popup player</button>
           <button id="copyBtn">📋 Copy notes</button>
           <button id="importBtn">📥 Import notes</button>
         </div>
       </div>
     </div>
 
+    <div id="errorBanner" class="error-banner" hidden></div>
     <div class="video-wrap" id="videoWrap"></div>
     <div class="status-row">
       <span class="time-live" id="timeLive"></span>
@@ -179,8 +196,12 @@
 </div>
 
 <script>
+  // ==================== STATE ====================
   var apiReady = false, player = null, videoId = null, pendingVideoId = null, tickTimer = null;
+  var popupPlayer = null, popupVideoId = null, liveTime = 0, playerMode = 'embed'; // 'embed' or 'popup'
+  var embedErrorDetected = false;
 
+  // ==================== DOM ELEMENTS ====================
   var homeView = document.getElementById('homeView');
   var detailView = document.getElementById('detailView');
   var videoListEl = document.getElementById('videoList');
@@ -196,6 +217,7 @@
   var noteCount = document.getElementById('noteCount');
   var headerMenuBtn = document.getElementById('headerMenuBtn');
   var headerDropdown = document.getElementById('headerDropdown');
+  var popupBtn = document.getElementById('popupBtn');
   var copyBtn = document.getElementById('copyBtn');
   var importBtn = document.getElementById('importBtn');
   var importOverlay = document.getElementById('importOverlay');
@@ -206,17 +228,23 @@
   var addUrlInput = document.getElementById('addUrlInput');
   var addCancelBtn = document.getElementById('addCancelBtn');
   var addConfirmBtn = document.getElementById('addConfirmBtn');
+  var errorBanner = document.getElementById('errorBanner');
 
+  // ==================== YOUTUBE IFRAME API ====================
   var tag = document.createElement('script');
   tag.src = 'https://www.youtube.com/iframe_api';
   document.head.appendChild(tag);
 
   window.onYouTubeIframeAPIReady = function(){
     apiReady = true;
-    apiStatus.textContent = 'Player ready';
-    if(pendingVideoId){ createOrLoad(pendingVideoId); pendingVideoId = null; }
+    apiStatus.textContent = 'Player API ready';
+    if(pendingVideoId){ 
+      createOrLoad(pendingVideoId); 
+      pendingVideoId = null; 
+    }
   };
 
+  // ==================== UTILITIES ====================
   function extractId(raw){
     if(!raw) return null;
     raw = raw.trim();
@@ -252,6 +280,7 @@
     return secs;
   }
 
+  // ==================== STORAGE ====================
   function storageKey(id){ return 'ytnotes:' + id; }
   function loadNotes(id){ try{ var raw = localStorage.getItem(storageKey(id)); return raw ? JSON.parse(raw) : []; }catch(e){ return []; } }
   function saveNotes(id, notes){ try{ localStorage.setItem(storageKey(id), JSON.stringify(notes)); }catch(e){} }
@@ -286,6 +315,7 @@
     headerDropdown.hidden = true;
   }
 
+  // ==================== HOME SCREEN ====================
   function renderHome(){
     videoListEl.innerHTML = '';
     var list = loadVideosList();
@@ -347,12 +377,16 @@
     });
   }
 
+  // ==================== DETAIL VIEW ====================
   function openDetail(id){
     homeView.style.display = 'none';
     fabBtn.style.display = 'none';
     detailView.hidden = false;
     var entry = loadVideosList().find(function(v){ return v.id === id; });
     detailTitleEl.textContent = (entry && entry.title) ? entry.title : 'Loading…';
+    playerMode = 'embed';
+    embedErrorDetected = false;
+    errorBanner.hidden = true;
     loadVideoFromId(id);
   }
 
@@ -360,26 +394,56 @@
     detailView.hidden = true;
     homeView.style.display = '';
     fabBtn.style.display = '';
+    if(popupPlayer && !popupPlayer.closed){ popupPlayer.close(); }
     renderHome();
   }
 
-  function createOrLoad(id){
-    addOrTouchVideo(id);
-    if(player && typeof player.loadVideoById === 'function'){
-      player.loadVideoById(id);
-    } else {
-      videoWrap.innerHTML = '<div id="player"></div>';
-      player = new YT.Player('player', {
-        videoId: id,
-        playerVars: { playsinline: 1, enablejsapi: 1, rel: 0 },
-        events: {
-          onReady: function(){ addBtn.disabled = false; startTicking(); tryUpdateTitle(); },
-          onStateChange: function(){ tryUpdateTitle(); }
+  // ==================== EMBEDDED PLAYER ====================
+  function createEmbeddedPlayer(id){
+    videoWrap.innerHTML = '<div id="player"></div>';
+    player = new YT.Player('player', {
+      videoId: id,
+      playerVars: { playsinline: 1, enablejsapi: 1, rel: 0 },
+      events: {
+        onReady: function(){ 
+          addBtn.disabled = false; 
+          startTicking(); 
+          tryUpdateTitle();
+          apiStatus.textContent = 'Embedded player ready';
+        },
+        onStateChange: function(){ tryUpdateTitle(); },
+        onError: function(e){
+          console.log('Embed error:', e.data);
+          if(e.data === 150 || e.data === 100){ // Embedding disabled
+            handleEmbedError();
+          }
         }
-      });
+      }
+    });
+  }
+
+  function handleEmbedError(){
+    embedErrorDetected = true;
+    errorBanner.textContent = '⚠️ Embedding disabled by video owner. Switching to popup player...';
+    errorBanner.hidden = false;
+    apiStatus.textContent = 'Embed blocked - using popup';
+    
+    // Auto-switch to popup after a brief delay
+    setTimeout(function(){
+      if(videoId){
+        closeEmbeddedPlayer();
+        openPopupPlayer(videoId);
+      }
+    }, 1500);
+  }
+
+  function closeEmbeddedPlayer(){
+    if(player){
+      try{ player.destroy(); }catch(e){}
+      player = null;
     }
-    videoId = id;
-    renderNotes();
+    videoWrap.innerHTML = '';
+    if(tickTimer){ clearInterval(tickTimer); tickTimer = null; }
   }
 
   function tryUpdateTitle(){
@@ -391,35 +455,155 @@
     }
   }
 
-  function loadVideoFromId(id){
-    if(!apiReady){ pendingVideoId = id; apiStatus.textContent = 'Waiting for player API…'; return; }
-    createOrLoad(id);
-  }
-
   function startTicking(){
     if(tickTimer) clearInterval(tickTimer);
     tickTimer = setInterval(function(){
       if(player && typeof player.getCurrentTime === 'function'){
         var t = player.getCurrentTime();
-        if(typeof t === 'number') timeLive.textContent = 'Current position: ' + fmt(t);
+        if(typeof t === 'number'){
+          liveTime = t;
+          timeLive.textContent = 'Current position: ' + fmt(t);
+        }
       }
     }, 500);
   }
 
+  // ==================== POPUP PLAYER ====================
+  function openPopupPlayer(id){
+    popupVideoId = id;
+    playerMode = 'popup';
+    
+    var w = 560, h = 420;
+    var left = (screen.width - w) / 2;
+    var top = (screen.height - h) / 2;
+    
+    // Get the base URL of current page
+    var baseUrl = window.location.href.split('/').slice(0, -1).join('/') + '/';
+    
+    popupPlayer = window.open(
+      baseUrl + 'popup-player.html?v=' + id,
+      'ytPopup_' + id,
+      'width='+w+',height='+h+',left='+left+',top='+top+',resizable=yes,scrollbars=no'
+    );
+    
+    if(!popupPlayer || popupPlayer.closed){
+      alert('Popup was blocked! Please allow popups for this site and try again.');
+      playerMode = 'embed';
+      return;
+    }
+    
+    errorBanner.textContent = '🪟 Using popup player - keep the popup window open';
+    errorBanner.hidden = false;
+    apiStatus.textContent = 'Popup player active';
+    addBtn.disabled = false;
+    
+    // Show mode indicator
+    updatePlayerModeIndicator();
+  }
+
+  function updatePlayerModeIndicator(){
+    var modeSpan = document.querySelector('.player-mode');
+    if(!modeSpan){
+      modeSpan = document.createElement('span');
+      modeSpan.className = 'player-mode';
+      apiStatus.parentNode.insertBefore(modeSpan, apiStatus.nextSibling);
+    }
+    modeSpan.textContent = playerMode === 'popup' ? ' POPUP' : '📺 EMBED';
+    modeSpan.className = 'player-mode ' + (playerMode === 'popup' ? 'popup' : 'embed');
+  }
+
+  // Listen for messages from popup
+  window.addEventListener('message', function(e){
+    if(!e.data || !e.data.type) return;
+    
+    // Only accept messages from our popup player
+    if(e.data.id !== videoId) return;
+    
+    if(e.data.type === 'playerReady'){
+      apiStatus.textContent = 'Popup player ready';
+      liveTime = 0;
+      timeLive.textContent = 'Current position: 0:00';
+      addBtn.disabled = false;
+      updatePlayerModeIndicator();
+    }
+    
+    if(e.data.type === 'timeUpdate'){
+      liveTime = e.data.time;
+      timeLive.textContent = 'Current position: ' + fmt(liveTime);
+      apiStatus.textContent = 'Popup player active';
+    }
+    
+    if(e.data.type === 'playerError'){
+      errorBanner.textContent = '⚠️ Popup player error: ' + e.data.message;
+      errorBanner.hidden = false;
+    }
+  });
+
+  function closePopupPlayer(){
+    if(popupPlayer && !popupPlayer.closed){
+      try{ popupPlayer.close(); }catch(e){}
+    }
+    popupPlayer = null;
+    popupVideoId = null;
+  }
+
+  // ==================== MAIN PLAYER LOADER ====================
+  function createOrLoad(id){
+    addOrTouchVideo(id);
+    videoId = id;
+    playerMode = 'embed';
+    embedErrorDetected = false;
+    errorBanner.hidden = true;
+    liveTime = 0;
+    timeLive.textContent = 'Current position: 0:00';
+    
+    // Remove old mode indicator
+    var oldMode = document.querySelector('.player-mode');
+    if(oldMode) oldMode.remove();
+    
+    if(apiReady){
+      createEmbeddedPlayer(id);
+    } else {
+      pendingVideoId = id;
+      apiStatus.textContent = 'Waiting for player API…';
+    }
+    
+    renderNotes();
+  }
+
+  function loadVideoFromId(id){
+    if(!apiReady){ 
+      pendingVideoId = id; 
+      apiStatus.textContent = 'Waiting for player API…'; 
+      return; 
+    }
+    createOrLoad(id);
+  }
+
+  // ==================== NOTES ====================
   function addNote(){
-    if(!videoId || !player || typeof player.getCurrentTime !== 'function'){ alert('Load a video first.'); return; }
+    if(!videoId){ alert('Load a video first.'); return; }
+    
     var text = noteText.value.trim();
     if(!text){ alert('Write a note before adding it.'); return; }
-    var t = Math.floor(player.getCurrentTime());
+    
+    var t = Math.floor(liveTime);
     var notes = loadNotes(videoId);
     notes.push({ id:'n'+Date.now()+Math.random().toString(36).slice(2,6), time:t, text:text });
     saveNotes(videoId, notes);
     noteText.value = '';
     renderNotes();
+    toast('Note added at ' + fmt(t));
   }
 
   function seekTo(t){
-    if(player && typeof player.seekTo === 'function'){ player.seekTo(t, true); player.playVideo(); }
+    if(playerMode === 'embed' && player && typeof player.seekTo === 'function'){
+      player.seekTo(t, true);
+      player.playVideo();
+    } else if(playerMode === 'popup' && popupPlayer && !popupPlayer.closed){
+      popupPlayer.postMessage({ type:'seek', time:t, id:videoId }, '*');
+      popupPlayer.postMessage({ type:'play', id:videoId }, '*');
+    }
   }
 
   function deleteNote(id){
@@ -525,6 +709,7 @@
     body.appendChild(editDiv);
   }
 
+  // ==================== IMPORT/EXPORT ====================
   function buildExportText(){
     var lines = [];
     if(videoId) lines.push('URL: https://youtu.be/' + videoId);
@@ -592,6 +777,7 @@
     toast('Imported ' + added + ' note' + (added===1 ? '' : 's'));
   }
 
+  // ==================== EVENT LISTENERS ====================
   backBtn.addEventListener('click', showHome);
   addBtn.addEventListener('click', addNote);
 
@@ -601,6 +787,17 @@
     closeAllMenus();
     headerDropdown.hidden = !wasHidden;
   });
+  
+  popupBtn.addEventListener('click', function(){
+    closeAllMenus();
+    if(videoId){
+      if(playerMode === 'embed'){
+        closeEmbeddedPlayer();
+      }
+      openPopupPlayer(videoId);
+    }
+  });
+  
   copyBtn.addEventListener('click', function(){ closeAllMenus(); if(videoId) copyText(buildExportText()); });
   importBtn.addEventListener('click', function(){ closeAllMenus(); importTextarea.value = ''; importOverlay.hidden = false; importTextarea.focus(); });
   importCancelBtn.addEventListener('click', function(){ importOverlay.hidden = true; });
@@ -619,6 +816,14 @@
 
   document.addEventListener('click', closeAllMenus);
 
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', function(){
+    if(popupPlayer && !popupPlayer.closed){
+      try{ popupPlayer.close(); }catch(e){}
+    }
+  });
+
+  // Initialize
   renderHome();
 </script>
 </body>
