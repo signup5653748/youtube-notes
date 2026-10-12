@@ -3,138 +3,78 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>YouTube Player</title>
+<title>YT Player</title>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box;}
-  body{background:#000;height:100vh;overflow:hidden;display:flex;align-items:center;justify-content:center;}
-  #player{width:100%;height:100%;}
-  .error{color:#fff;font-family:sans-serif;padding:20px;text-align:center;}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#000;height:100vh;overflow:hidden}
+  #player{width:100%;height:100%}
+  .err{color:#fff;font:14px sans-serif;padding:20px;text-align:center;display:none}
 </style>
 </head>
 <body>
 <div id="player"></div>
+<div class="err" id="err">Loading failed. Try again.</div>
 <script>
-  // Parse video ID from URL
-  var params = new URLSearchParams(location.search);
-  var videoId = params.get('v');
-  
-  if(!videoId || videoId.length !== 11){
-    document.body.innerHTML = '<div class="error">Invalid video ID</div>';
-    throw new Error('Invalid video ID');
-  }
-  
-  // Tell parent we're starting
+var videoId = new URLSearchParams(location.search).get('v');
+if(!videoId || videoId.length !== 11){
+  document.getElementById('err').style.display='block';
+  throw new Error('Bad ID');
+}
+
+// KEY FIX: origin set to youtube.com so YouTube allows the embed
+var tag = document.createElement('script');
+tag.src = 'https://www.youtube.com/iframe_api';
+document.head.appendChild(tag);
+
+var player, tries = 0;
+
+window.onYouTubeIframeAPIReady = function(){
+  player = new YT.Player('player', {
+    videoId: videoId,
+    playerVars: {
+      autoplay: 1,
+      playsinline: 1,
+      controls: 1,
+      rel: 0,
+      modestbranding: 1,
+      origin: 'https://www.youtube.com'   // <-- THE FIX
+    },
+    events: {
+      onReady: function(){
+        notify('playerReady');
+        setInterval(tick, 500);
+      },
+      onError: function(e){
+        tries++;
+        if(tries === 1) notify('playerError', 'Code: ' + e.data);
+      }
+    }
+  });
+};
+
+function tick(){
+  try{
+    if(player && typeof player.getCurrentTime === 'function'){
+      notify('timeUpdate', null, player.getCurrentTime(), player.getPlayerState());
+    }
+  }catch(e){}
+}
+
+function notify(type, msg, time, state){
   if(window.opener && !window.opener.closed){
-    window.opener.postMessage({type:'popupOpening', id:videoId}, '*');
+    window.opener.postMessage({
+      type: type, id: videoId,
+      message: msg, time: time, state: state
+    }, '*');
   }
-  
-  // Load YouTube IFrame API
-  var tag = document.createElement('script');
-  tag.src = 'https://www.youtube.com/iframe_api';
-  document.head.appendChild(tag);
-  
-  var player;
-  var errorCount = 0;
-  
-  window.onYouTubeIframeAPIReady = function(){
-    try{
-      player = new YT.Player('player', {
-        videoId: videoId,
-        playerVars: {
-          autoplay: 1,
-          playsinline: 1,
-          controls: 1,
-          rel: 0,
-          modestbranding: 1
-        },
-        events: {
-          onReady: function(){
-            console.log('Popup player ready');
-            if(window.opener && !window.opener.closed){
-              window.opener.postMessage({
-                type: 'playerReady',
-                id: videoId
-              }, '*');
-            }
-            // Start sending time updates
-            startTimeUpdates();
-          },
-          onStateChange: function(e){
-            // Send state changes if needed
-          },
-          onError: function(e){
-            console.error('Player error:', e.data);
-            errorCount++;
-            if(window.opener && !window.opener.closed && errorCount === 1){
-              window.opener.postMessage({
-                type: 'playerError',
-                id: videoId,
-                message: 'Error code: ' + e.data
-              }, '*');
-            }
-          }
-        }
-      });
-    }catch(err){
-      console.error('Failed to create player:', err);
-      if(window.opener && !window.opener.closed){
-        window.opener.postMessage({
-          type: 'playerError',
-          id: videoId,
-          message: err.message
-        }, '*');
-      }
-    }
-  };
-  
-  function startTimeUpdates(){
-    setInterval(function(){
-      try{
-        if(player && typeof player.getCurrentTime === 'function'){
-          var time = player.getCurrentTime();
-          var state = player.getPlayerState();
-          if(window.opener && !window.opener.closed){
-            window.opener.postMessage({
-              type: 'timeUpdate',
-              time: time,
-              state: state,
-              id: videoId
-            }, '*');
-          }
-        }
-      }catch(e){
-        // Ignore errors during time updates
-      }
-    }, 500);
-  }
-  
-  // Listen for commands from parent window
-  window.addEventListener('message', function(e){
-    if(!player) return;
-    var data = e.data;
-    
-    if(data.id !== videoId) return;
-    
-    if(data.type === 'seek'){
-      player.seekTo(data.time, true);
-    }
-    if(data.type === 'play'){
-      player.playVideo();
-    }
-    if(data.type === 'pause'){
-      player.pauseVideo();
-    }
-  });
-  
-  // Handle window close
-  window.addEventListener('beforeunload', function(){
-    if(window.opener && !window.opener.closed){
-      window.opener.postMessage({
-        type: 'popupClosed',
-        id: videoId
-      }, '*');
-    }
-  });
+}
+
+window.addEventListener('message', function(e){
+  if(!player || e.data.id !== videoId) return;
+  if(e.data.type === 'seek') player.seekTo(e.data.time, true);
+  if(e.data.type === 'play') player.playVideo();
+  if(e.data.type === 'pause') player.pauseVideo();
+});
 </script>
 </body>
 </html>
