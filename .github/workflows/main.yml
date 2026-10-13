@@ -1,20 +1,12 @@
-name: Generate and Play TTS Audio
+name: Generate and Play TTS Audio (MMS Kannada)
 
 on:
   workflow_dispatch:
     inputs:
-      model_onnx_url:
-        description: 'Raw HuggingFace ONNX URL'
-        required: true
-        default: 'https://huggingface.co/micahchoo/piper-kn/resolve/main/kn_IN-syspin_male-medium.onnx'
-      model_json_url:
-        description: 'Raw HuggingFace JSON URL'
-        required: true
-        default: 'https://huggingface.co/micahchoo/piper-kn/resolve/main/kn_IN-syspin_male-medium.onnx.json'
       text_to_speak:
-        description: 'Text to generate audio for (Kannada)'
+        description: 'Kannada Text to generate audio for'
         required: true
-        default: 'ಒಂದು ಹಳ್ಳಿಯಲ್ಲಿ ರಾಮು ಎಂಬ ಹುಡುಗ ವಾಸಿಸುತ್ತಿದ್ದನು.'
+        default: 'ಒಂದು ಹಳ್ಳಿಯಲ್ಲಿ ರಾಮು ಎಂಬ ಹುಡುಗ ವಾಸಿಸುತ್ತಿದ್ದನು. ಅವನು ತುಂಬಾ ಒಳ್ಳೆಯ ಮನಸ್ಸಿನವನಾಗಿದ್ದನು.'
 
 jobs:
   generate-and-play:
@@ -26,60 +18,67 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Install System Dependencies (Includes Kannada Dictionary)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y espeak-ng
-          # Verify Kannada (kn) is available in the system espeak-ng
-          espeak-ng --voices | grep -i "kn" || echo "WARNING: Kannada not found in espeak-ng"
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-      - name: Download Piper TTS Engine
+      - name: Install Dependencies
         run: |
-          wget -q https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz
-          tar -xzf piper_linux_x86_64.tar.gz
-          chmod +x piper/piper
+          pip install sherpa-onnx soundfile
 
-      - name: Download Model Files
+      - name: Download MMS Kannada Model
         run: |
-          echo "Downloading ONNX model..."
-          wget -q -O model.onnx "${{ github.event.inputs.model_onnx_url }}"
-          
-          echo "Downloading JSON config..."
-          wget -q -O model.onnx.json "${{ github.event.inputs.model_json_url }}"
-          
-          echo "✅ Download successful! File sizes:"
-          ls -lh model.onnx*
+          echo "Downloading verified MMS Kannada model..."
+          wget -q -O model.onnx "https://huggingface.co/csukuangfj/vits-mms-tts-kan/resolve/main/model.onnx"
+          wget -q -O tokens.txt "https://huggingface.co/csukuangfj/vits-mms-tts-kan/resolve/main/tokens.txt"
+          echo "✅ Download successful!"
+          ls -lh model.onnx tokens.txt
 
       - name: Generate Audio (.wav)
         run: |
-          mkdir -p audio_samples
-          FILENAME="audio_samples/sample_${{ github.run_id }}.wav"
+          cat << 'EOF' > generate_tts.py
+          import sherpa_onnx
+          import soundfile as sf
+          import os
+
+          text = """${{ github.event.inputs.text_to_speak }}"""
+          print(f"Generating audio for: {text}")
+
+          # Configure the MMS TTS model (No espeak-ng needed!)
+          config = sherpa_onnx.OfflineTtsConfig(
+              model=sherpa_onnx.OfflineTtsModelConfig(
+                  vits=sherpa_onnx.OfflineTtsVitsModelConfig(
+                      model="model.onnx",
+                      tokens="tokens.txt",
+                      length_scale=1.0,
+                  ),
+                  num_threads=1,
+                  debug=False,
+              ),
+              max_num_sentences=1,
+          )
           
-          echo "Generating audio for: ${{ github.event.inputs.text_to_speak }}"
+          # Create engine and generate
+          tts = sherpa_onnx.OfflineTts(config)
+          audio = tts.generate(text, sid=0, speed=1.0)
           
-          # CRITICAL FIX: Use the SYSTEM espeak-ng data folder (/usr/share/espeak-ng-data) 
-          # which contains the Kannada (kn) dictionary, NOT the bundled Piper one.
-          echo "${{ github.event.inputs.text_to_speak }}" | ./piper/piper \
-            --model model.onnx \
-            --espeak_data /usr/share/espeak-ng-data \
-            --output_file "$FILENAME"
+          # Save file
+          os.makedirs("audio_samples", exist_ok=True)
+          filename = f"audio_samples/sample_{os.environ['GITHUB_RUN_ID']}.wav"
+          sf.write(filename, audio.samples, audio.sample_rate)
+          print(f"✅ Saved to {filename}")
           
-          echo "AUDIO_FILE=$FILENAME" >> $GITHUB_ENV
+          # Pass filename to next step
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write(f"AUDIO_FILE={filename}\n")
+          EOF
+          
+          python generate_tts.py
 
       - name: Commit Audio to Repository
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
           git add ${{ env.AUDIO_FILE }}
-          git commit -m "chore: add generated TTS audio sample [skip ci]" || echo "No changes to commit"
-          git push
-
-      - name: 🎧 Output Playable Browser Link
-        run: |
-          RAW_URL="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/${{ env.AUDIO_FILE }}"
-          
-          echo "## 🎧 Click the link below to play the audio directly in your browser:" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔊 [PLAY AUDIO NOW]($RAW_URL)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "*(💡 Tip: Right-click and 'Open in new tab' if it downloads instead of playing)*" >> $GITHUB_STEP_SUMMARY
+          git commit -m "chore: add generated TTS audio sample [skip ci]"
