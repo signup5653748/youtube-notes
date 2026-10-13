@@ -1,16 +1,28 @@
-name: Generate TTS Audio Samples
+name: Generate and Play TTS Audio
 
+# Allows you to run this manually and input your own URLs
 on:
   workflow_dispatch:
     inputs:
+      model_onnx_url:
+        description: 'Raw HuggingFace ONNX URL (MUST contain /resolve/main/)'
+        required: true
+        default: 'https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium.onnx'
+      model_json_url:
+        description: 'Raw HuggingFace JSON URL (MUST contain /resolve/main/)'
+        required: true
+        default: 'https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium.onnx.json'
       text_to_speak:
-        description: 'Text to generate audio for (Hindi)'
+        description: 'Text to generate audio for'
         required: true
         default: 'नमस्ते, मैं हिंदी बोल रहा हूँ।'
 
 jobs:
-  generate-audio:
+  generate-and-play:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to save the audio file back to your repo
+    
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
@@ -21,23 +33,47 @@ jobs:
           tar -xzf piper_linux_x86_64.tar.gz
           chmod +x piper/piper
 
-      - name: Download ONNX Model and JSON (CORRECT LINKS)
+      - name: Download Model Files from Your URLs
         run: |
-          # Download the .onnx file using 'resolve/main'
-          wget -q -O model.onnx "https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium.onnx"
+          echo "Downloading ONNX model..."
+          wget -q -O model.onnx "${{ github.event.inputs.model_onnx_url }}"
           
-          # Download the .json config file using 'resolve/main'
-          wget -q -O model.onnx.json "https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium.onnx.json"
+          echo "Downloading JSON config..."
+          wget -q -O model.onnx.json "${{ github.event.inputs.model_json_url }}"
           
-          echo "Files downloaded successfully:"
-          ls -lh
+          echo "✅ Download successful! File sizes:"
+          ls -lh model.onnx*
 
       - name: Generate Audio (.wav)
         run: |
-          echo "${{ github.event.inputs.text_to_speak }}" | ./piper/piper --model model.onnx --output_file generated_sample.wav
+          # Create a folder to store the audio
+          mkdir -p audio_samples
+          
+          # Create a unique filename using the GitHub Run ID
+          FILENAME="audio_samples/sample_${{ github.run_id }}.wav"
+          
+          echo "Generating audio for: ${{ github.event.inputs.text_to_speak }}"
+          echo "${{ github.event.inputs.text_to_speak }}" | ./piper/piper --model model.onnx --output_file "$FILENAME"
+          
+          # Save the filename to an environment variable for the next step
+          echo "AUDIO_FILE=$FILENAME" >> $GITHUB_ENV
 
-      - name: Upload Audio Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: hindi-tts-audio-sample
-          path: generated_sample.wav
+      - name: Commit Audio to Repository
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add ${{ env.AUDIO_FILE }}
+          git commit -m "chore: add generated TTS audio sample [skip ci]" || echo "No changes to commit"
+          git push
+
+      - name: 🎧 Output Playable Browser Link
+        run: |
+          # Construct the raw GitHub URL
+          RAW_URL="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/${{ env.AUDIO_FILE }}"
+          
+          # Print it beautifully in the GitHub Actions Summary tab
+          echo "## 🎧 Click the link below to play the audio directly in your browser:" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔊 [PLAY AUDIO NOW]($RAW_URL)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "*(💡 Tip: If your browser tries to download it instead of playing, right-click the link above and select **'Open link in new tab'**)*" >> $GITHUB_STEP_SUMMARY
