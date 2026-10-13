@@ -3,6 +3,10 @@ name: Universal TTS Model Tester
 # Put this file at: .github/workflows/universal-tts-tester.yml
 # Put your text to speak in a file at the repo root called: tts_input.txt
 # (any language/script — it's read as UTF-8)
+#
+# Gated/private Hugging Face model? Add a repo secret named HF_TOKEN
+# (Settings -> Secrets and variables -> Actions). It's used automatically
+# if present; nothing to type into the workflow itself.
 
 on:
   workflow_dispatch:
@@ -83,14 +87,26 @@ jobs:
           VOCODER_URL: ${{ inputs.vocoder_url }}
           VOICES_URL: ${{ inputs.voices_url }}
           LEXICON_URL: ${{ inputs.lexicon_url }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           fetch() {
             local url="$1" out="$2"
             if [ -z "$url" ]; then return 0; fi
             echo "Downloading $out ..."
-            wget -q -O "$out" "$url"
+            if [ -n "$HF_TOKEN" ]; then
+              http_code=$(curl -L -sS -o "$out" -w "%{http_code}" -H "Authorization: Bearer $HF_TOKEN" "$url")
+            else
+              http_code=$(curl -L -sS -o "$out" -w "%{http_code}" "$url")
+            fi
+            if [ "$http_code" -ge 400 ]; then
+              echo "❌ $out failed to download (HTTP $http_code)."
+              echo "   If this is a gated/private HF model, add a repo secret named HF_TOKEN."
+              echo "   Otherwise double-check the URL and that it contains /resolve/main/."
+              rm -f "$out"
+              exit 1
+            fi
             if [ ! -s "$out" ]; then
-              echo "❌ $out downloaded empty. Check the URL."
+              echo "❌ $out downloaded empty."
               exit 1
             fi
             if head -c 200 "$out" | grep -qi "<!doctype html\|<html"; then
