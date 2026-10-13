@@ -1,31 +1,35 @@
 name: Generate and Play TTS Audio
 
-# Allows you to run this manually and input your own URLs
 on:
   workflow_dispatch:
     inputs:
       model_onnx_url:
-        description: 'Raw HuggingFace ONNX URL (MUST contain /resolve/main/)'
+        description: 'Raw HuggingFace ONNX URL'
         required: true
-        default: 'https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium.onnx'
+        default: 'https://huggingface.co/micahchoo/piper-kn/resolve/main/kn_IN-syspin_male-medium.onnx'
       model_json_url:
-        description: 'Raw HuggingFace JSON URL (MUST contain /resolve/main/)'
+        description: 'Raw HuggingFace JSON URL'
         required: true
-        default: 'https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium.onnx.json'
+        default: 'https://huggingface.co/micahchoo/piper-kn/resolve/main/kn_IN-syspin_male-medium.onnx.json'
       text_to_speak:
         description: 'Text to generate audio for'
         required: true
-        default: 'नमस्ते, मैं हिंदी बोल रहा हूँ।'
+        default: 'ಒಂದು ಹಳ್ಳಿಯಲ್ಲಿ ರಾಮು ಎಂಬ ಹುಡುಗ ವಾಸಿಸುತ್ತಿದ್ದನು.'
 
 jobs:
   generate-and-play:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Required to save the audio file back to your repo
+      contents: write
     
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
+
+      - name: Install System Dependencies (Fixes Core Dump)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y espeak-ng
 
       - name: Download Piper TTS Engine
         run: |
@@ -33,7 +37,7 @@ jobs:
           tar -xzf piper_linux_x86_64.tar.gz
           chmod +x piper/piper
 
-      - name: Download Model Files from Your URLs
+      - name: Download Model Files
         run: |
           echo "Downloading ONNX model..."
           wget -q -O model.onnx "${{ github.event.inputs.model_onnx_url }}"
@@ -46,16 +50,17 @@ jobs:
 
       - name: Generate Audio (.wav)
         run: |
-          # Create a folder to store the audio
           mkdir -p audio_samples
-          
-          # Create a unique filename using the GitHub Run ID
           FILENAME="audio_samples/sample_${{ github.run_id }}.wav"
           
-          echo "Generating audio for: ${{ github.event.inputs.text_to_speak }}"
-          echo "${{ github.event.inputs.text_to_speak }}" | ./piper/piper --model model.onnx --output_file "$FILENAME"
+          echo "Generating audio..."
           
-          # Save the filename to an environment variable for the next step
+          # CRITICAL FIX: Explicitly point to the espeak-ng data folder to prevent core dumps
+          echo "${{ github.event.inputs.text_to_speak }}" | ./piper/piper \
+            --model model.onnx \
+            --espeak_data ./piper/espeak-ng-data \
+            --output_file "$FILENAME"
+          
           echo "AUDIO_FILE=$FILENAME" >> $GITHUB_ENV
 
       - name: Commit Audio to Repository
@@ -69,11 +74,9 @@ jobs:
 
       - name: 🎧 Output Playable Browser Link
         run: |
-          # Construct the raw GitHub URL
           RAW_URL="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/${{ env.AUDIO_FILE }}"
           
-          # Print it beautifully in the GitHub Actions Summary tab
           echo "## 🎧 Click the link below to play the audio directly in your browser:" >> $GITHUB_STEP_SUMMARY
           echo "### 🔊 [PLAY AUDIO NOW]($RAW_URL)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "*(💡 Tip: If your browser tries to download it instead of playing, right-click the link above and select **'Open link in new tab'**)*" >> $GITHUB_STEP_SUMMARY
+          echo "*(💡 Tip: Right-click and 'Open in new tab' if it downloads instead of playing)*" >> $GITHUB_STEP_SUMMARY
