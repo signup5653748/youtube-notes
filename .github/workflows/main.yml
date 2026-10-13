@@ -1,15 +1,10 @@
 name: Generate TTS Audio Samples
 
-# This allows you to run the workflow manually from the "Actions" tab
 on:
   workflow_dispatch:
     inputs:
-      hf_model_url:
-        description: 'HuggingFace Model URL (e.g., https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium.onnx)'
-        required: true
-        default: 'https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium.onnx'
       text_to_speak:
-        description: 'Text to generate audio for'
+        description: 'Text to generate audio for (Hindi)'
         required: true
         default: 'नमस्ते, मैं हिंदी बोल रहा हूँ।'
 
@@ -22,17 +17,20 @@ jobs:
 
       - name: Download Piper TTS Engine
         run: |
-          wget https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz
+          wget -q https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz
           tar -xzf piper_linux_x86_64.tar.gz
           chmod +x piper/piper
 
-      - name: Download ONNX Model and JSON from HuggingFace
+      - name: Download ONNX Model and JSON (CORRECT LINKS)
         run: |
-          # Download the .onnx file
-          wget -O model.onnx "${{ github.event.inputs.hf_model_url }}"
+          # Download the .onnx file using 'resolve/main'
+          wget -q -O model.onnx "https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium.onnx"
           
-          # Download the .json config file (assuming it has the same name + .json)
-          wget -O model.onnx.json "${{ github.event.inputs.hf_model_url }}.json"
+          # Download the .json config file using 'resolve/main'
+          wget -q -O model.onnx.json "https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium.onnx.json"
+          
+          echo "Files downloaded successfully:"
+          ls -lh
 
       - name: Generate Audio (.wav)
         run: |
@@ -41,5 +39,5 @@ jobs:
       - name: Upload Audio Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tts-audio-sample
+          name: hindi-tts-audio-sample
           path: generated_sample.wav
