@@ -1,12 +1,12 @@
-name: Generate and Play TTS Audio (MMS Kannada)
+name: Generate and Play TTS Audio (MMS Gujarati)
 
 on:
   workflow_dispatch:
     inputs:
       text_to_speak:
-        description: 'Kannada Text to generate audio for'
+        description: 'Gujarati Text to generate audio for'
         required: true
-        default: 'ಒಂದು ಹಳ್ಳಿಯಲ್ಲಿ ರಾಮು ಎಂಬ ಹುಡುಗ ವಾಸಿಸುತ್ತಿದ್ದನು. ಅವನು ತುಂಬಾ ಒಳ್ಳೆಯ ಮನಸ್ಸಿನವನಾಗಿದ್ದನು.'
+        default: 'નમસ્તે, મારું નામ રામ છે. હું ગુજરાતી બોલું છું.'
 
 jobs:
   generate-and-play:
@@ -27,11 +27,12 @@ jobs:
         run: |
           pip install sherpa-onnx soundfile
 
-      - name: Download MMS Kannada Model
+      - name: Download MMS Gujarati Model
         run: |
-          echo "Downloading verified MMS Kannada model..."
-          wget -q -O model.onnx "https://huggingface.co/csukuangfj/vits-mms-tts-kan/resolve/main/model.onnx"
-          wget -q -O tokens.txt "https://huggingface.co/csukuangfj/vits-mms-tts-kan/resolve/main/tokens.txt"
+          echo "Downloading verified Sherpa-ONNX Gujarati model..."
+          # Using the iTantra converted model which is guaranteed to work
+          wget -q -O model.onnx "https://huggingface.co/sriram09764/itantra-tts-onnx/resolve/main/gu/model.onnx"
+          wget -q -O tokens.txt "https://huggingface.co/sriram09764/itantra-tts-onnx/resolve/main/gu/tokens.txt"
           echo "✅ Download successful!"
           ls -lh model.onnx tokens.txt
 
@@ -81,4 +82,13 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add ${{ env.AUDIO_FILE }}
-          git commit -m "chore: add generated TTS audio sample [skip ci]"
+          git commit -m "chore: add generated Gujarati TTS audio sample [skip ci]" || echo "No changes"
+          git push
+
+      - name: 🎧 Output Playable Browser Link
+        run: |
+          RAW_URL="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/${{ env.AUDIO_FILE }}"
+          echo "## 🎧 Click the link below to play the audio directly in your browser:" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔊 [PLAY AUDIO NOW]($RAW_URL)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "*(💡 Tip: Right-click and 'Open in new tab' if it downloads instead of playing)*" >> $GITHUB_STEP_SUMMARY
