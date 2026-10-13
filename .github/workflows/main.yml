@@ -1,15 +1,23 @@
-name: Generate and Play TTS Audio (MMS Gujarati)
+name: Universal TTS Audio Tester
 
 on:
   workflow_dispatch:
     inputs:
-      text_to_speak:
-        description: 'Gujarati Text to generate audio for'
+      model_onnx_url:
+        description: 'Raw URL for model.onnx (MUST contain /resolve/main/)'
         required: true
-        default: 'નમસ્તે, મારું નામ રામ છે. હું ગુજરાતી બોલું છું.'
+        default: 'https://huggingface.co/sriram09764/itantra-tts-onnx/resolve/main/gu/model.onnx'
+      tokens_url:
+        description: 'Raw URL for tokens.txt (MUST contain /resolve/main/)'
+        required: true
+        default: 'https://huggingface.co/sriram09764/itantra-tts-onnx/resolve/main/gu/tokens.txt'
+      text_to_speak:
+        description: 'Text to generate audio for'
+        required: true
+        default: 'નમસ્તે, આ એક યુનિવર્સલ ટેસ્ટ છે.'
 
 jobs:
-  generate-and-play:
+  universal-tester:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -27,13 +35,15 @@ jobs:
         run: |
           pip install sherpa-onnx soundfile
 
-      - name: Download MMS Gujarati Model
+      - name: Download Model Files from Your URLs
         run: |
-          echo "Downloading verified Sherpa-ONNX Gujarati model..."
-          # Using the iTantra converted model which is guaranteed to work
-          wget -q -O model.onnx "https://huggingface.co/sriram09764/itantra-tts-onnx/resolve/main/gu/model.onnx"
-          wget -q -O tokens.txt "https://huggingface.co/sriram09764/itantra-tts-onnx/resolve/main/gu/tokens.txt"
-          echo "✅ Download successful!"
+          echo "Downloading ONNX model..."
+          wget -q -O model.onnx "${{ github.event.inputs.model_onnx_url }}"
+          
+          echo "Downloading tokens file..."
+          wget -q -O tokens.txt "${{ github.event.inputs.tokens_url }}"
+          
+          echo "✅ Download successful! File sizes:"
           ls -lh model.onnx tokens.txt
 
       - name: Generate Audio (.wav)
@@ -46,7 +56,7 @@ jobs:
           text = """${{ github.event.inputs.text_to_speak }}"""
           print(f"Generating audio for: {text}")
 
-          # Configure the MMS TTS model (No espeak-ng needed!)
+          # Configure the TTS model
           config = sherpa_onnx.OfflineTtsConfig(
               model=sherpa_onnx.OfflineTtsModelConfig(
                   vits=sherpa_onnx.OfflineTtsVitsModelConfig(
@@ -82,7 +92,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add ${{ env.AUDIO_FILE }}
-          git commit -m "chore: add generated Gujarati TTS audio sample [skip ci]" || echo "No changes"
+          git commit -m "chore: add generated TTS audio sample [skip ci]" || echo "No changes"
           git push
 
       - name: 🎧 Output Playable Browser Link
