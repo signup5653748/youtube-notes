@@ -12,7 +12,7 @@ on:
         required: true
         default: 'https://huggingface.co/micahchoo/piper-kn/resolve/main/kn_IN-syspin_male-medium.onnx.json'
       text_to_speak:
-        description: 'Text to generate audio for'
+        description: 'Text to generate audio for (Kannada)'
         required: true
         default: 'ಒಂದು ಹಳ್ಳಿಯಲ್ಲಿ ರಾಮು ಎಂಬ ಹುಡುಗ ವಾಸಿಸುತ್ತಿದ್ದನು.'
 
@@ -26,10 +26,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Install System Dependencies (Fixes Core Dump)
+      - name: Install System Dependencies (Includes Kannada Dictionary)
         run: |
           sudo apt-get update
           sudo apt-get install -y espeak-ng
+          # Verify Kannada (kn) is available in the system espeak-ng
+          espeak-ng --voices | grep -i "kn" || echo "WARNING: Kannada not found in espeak-ng"
 
       - name: Download Piper TTS Engine
         run: |
@@ -53,12 +55,13 @@ jobs:
           mkdir -p audio_samples
           FILENAME="audio_samples/sample_${{ github.run_id }}.wav"
           
-          echo "Generating audio..."
+          echo "Generating audio for: ${{ github.event.inputs.text_to_speak }}"
           
-          # CRITICAL FIX: Explicitly point to the espeak-ng data folder to prevent core dumps
+          # CRITICAL FIX: Use the SYSTEM espeak-ng data folder (/usr/share/espeak-ng-data) 
+          # which contains the Kannada (kn) dictionary, NOT the bundled Piper one.
           echo "${{ github.event.inputs.text_to_speak }}" | ./piper/piper \
             --model model.onnx \
-            --espeak_data ./piper/espeak-ng-data \
+            --espeak_data /usr/share/espeak-ng-data \
             --output_file "$FILENAME"
           
           echo "AUDIO_FILE=$FILENAME" >> $GITHUB_ENV
