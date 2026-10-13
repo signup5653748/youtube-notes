@@ -1,104 +1,210 @@
-name: Universal TTS Audio Tester
+name: Universal TTS Model Tester
+
+# Put this file at: .github/workflows/universal-tts-tester.yml
+# Put your text to speak in a file at the repo root called: tts_input.txt
+# (any language/script — it's read as UTF-8)
 
 on:
   workflow_dispatch:
     inputs:
-      model_onnx_url:
-        description: 'Raw URL for model.onnx (MUST contain /resolve/main/)'
+      model_type:
+        description: 'TTS model architecture'
+        required: true
+        type: choice
+        options:
+          - vits
+          - matcha
+          - kokoro
+        default: vits
+      model_url:
+        description: 'Main model file URL (model.onnx, or acoustic model for matcha) — MUST contain /resolve/main/'
         required: true
         default: 'https://huggingface.co/sriram09764/itantra-tts-onnx/resolve/main/gu/model.onnx'
       tokens_url:
-        description: 'Raw URL for tokens.txt (MUST contain /resolve/main/)'
+        description: 'tokens.txt URL — MUST contain /resolve/main/'
         required: true
         default: 'https://huggingface.co/sriram09764/itantra-tts-onnx/resolve/main/gu/tokens.txt'
-      text_to_speak:
-        description: 'Text to generate audio for'
-        required: true
-        default: 'નમસ્તે, આ એક યુનિવર્સલ ટેસ્ટ છે.'
+      vocoder_url:
+        description: '(matcha only) vocoder .onnx URL'
+        required: false
+        default: ''
+      voices_url:
+        description: '(kokoro only) voices.bin URL'
+        required: false
+        default: ''
+      lexicon_url:
+        description: '(optional, some languages e.g. Mandarin) lexicon.txt URL'
+        required: false
+        default: ''
+      speaker_id:
+        description: 'Speaker ID (multi-speaker models)'
+        required: false
+        default: '0'
+      speed:
+        description: 'Speech speed (1.0 = normal)'
+        required: false
+        default: '1.0'
 
 jobs:
-  universal-tester:
+  tts-test:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Verify input text file exists
+        run: |
+          if [ ! -f "tts_input.txt" ]; then
+            echo "❌ tts_input.txt not found at repo root."
+            echo "Create it, paste the text you want spoken, commit it, then re-run this workflow."
+            exit 1
+          fi
+          if [ ! -s "tts_input.txt" ]; then
+            echo "❌ tts_input.txt is empty. Add some text first."
+            exit 1
+          fi
+          echo "✅ Found tts_input.txt ($(wc -c < tts_input.txt) bytes)"
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       - name: Install Dependencies
-        run: |
-          pip install sherpa-onnx soundfile
+        run: pip install sherpa-onnx soundfile
 
-      - name: Download Model Files from Your URLs
+      - name: Download model files
+        env:
+          MODEL_URL: ${{ inputs.model_url }}
+          TOKENS_URL: ${{ inputs.tokens_url }}
+          VOCODER_URL: ${{ inputs.vocoder_url }}
+          VOICES_URL: ${{ inputs.voices_url }}
+          LEXICON_URL: ${{ inputs.lexicon_url }}
         run: |
-          echo "Downloading ONNX model..."
-          wget -q -O model.onnx "${{ github.event.inputs.model_onnx_url }}"
-          
-          echo "Downloading tokens file..."
-          wget -q -O tokens.txt "${{ github.event.inputs.tokens_url }}"
-          
-          echo "✅ Download successful! File sizes:"
-          ls -lh model.onnx tokens.txt
+          fetch() {
+            local url="$1" out="$2"
+            if [ -z "$url" ]; then return 0; fi
+            echo "Downloading $out ..."
+            wget -q -O "$out" "$url"
+            if [ ! -s "$out" ]; then
+              echo "❌ $out downloaded empty. Check the URL."
+              exit 1
+            fi
+            if head -c 200 "$out" | grep -qi "<!doctype html\|<html"; then
+              echo "❌ $out looks like an HTML page, not the real file."
+              echo "   Make sure the URL contains /resolve/main/ (not /blob/main/)."
+              exit 1
+            fi
+          }
+
+          fetch "$MODEL_URL" model.onnx
+          fetch "$TOKENS_URL" tokens.txt
+          fetch "$VOCODER_URL" vocoder.onnx
+          fetch "$VOICES_URL" voices.bin
+          fetch "$LEXICON_URL" lexicon.txt
+
+          echo "✅ Downloaded files:"
+          ls -lh *.onnx *.txt *.bin 2>/dev/null || true
 
       - name: Generate Audio (.wav)
+        env:
+          MODEL_TYPE: ${{ inputs.model_type }}
+          SPEAKER_ID: ${{ inputs.speaker_id }}
+          SPEED: ${{ inputs.speed }}
         run: |
-          cat << 'EOF' > generate_tts.py
+          cat << 'PYEOF' > generate_tts.py
+          import os
           import sherpa_onnx
           import soundfile as sf
-          import os
 
-          text = """${{ github.event.inputs.text_to_speak }}"""
-          print(f"Generating audio for: {text}")
+          model_type = os.environ["MODEL_TYPE"]
+          speaker_id = int(os.environ.get("SPEAKER_ID", "0") or "0")
+          speed = float(os.environ.get("SPEED", "1.0") or "1.0")
 
-          # Configure the TTS model
-          config = sherpa_onnx.OfflineTtsConfig(
-              model=sherpa_onnx.OfflineTtsModelConfig(
+          with open("tts_input.txt", "r", encoding="utf-8") as f:
+              text = f.read().strip()
+
+          print(f"Model type: {model_type}")
+          print(f"Text ({len(text)} chars): {text[:200]}")
+
+          lexicon = "lexicon.txt" if os.path.exists("lexicon.txt") else ""
+
+          if model_type == "vits":
+              model_cfg = sherpa_onnx.OfflineTtsModelConfig(
                   vits=sherpa_onnx.OfflineTtsVitsModelConfig(
                       model="model.onnx",
                       tokens="tokens.txt",
-                      length_scale=1.0,
+                      lexicon=lexicon,
                   ),
                   num_threads=1,
                   debug=False,
-              ),
-              max_num_sentences=1,
-          )
-          
-          # Create engine and generate
+              )
+          elif model_type == "matcha":
+              if not os.path.exists("vocoder.onnx"):
+                  raise SystemExit("matcha model_type needs vocoder_url set.")
+              model_cfg = sherpa_onnx.OfflineTtsModelConfig(
+                  matcha=sherpa_onnx.OfflineTtsMatchaModelConfig(
+                      acoustic_model="model.onnx",
+                      vocoder="vocoder.onnx",
+                      tokens="tokens.txt",
+                      lexicon=lexicon,
+                  ),
+                  num_threads=1,
+                  debug=False,
+              )
+          elif model_type == "kokoro":
+              if not os.path.exists("voices.bin"):
+                  raise SystemExit("kokoro model_type needs voices_url set.")
+              model_cfg = sherpa_onnx.OfflineTtsModelConfig(
+                  kokoro=sherpa_onnx.OfflineTtsKokoroModelConfig(
+                      model="model.onnx",
+                      voices="voices.bin",
+                      tokens="tokens.txt",
+                      lexicon=lexicon,
+                  ),
+                  num_threads=1,
+                  debug=False,
+              )
+          else:
+              raise SystemExit(f"Unknown model_type: {model_type}")
+
+          config = sherpa_onnx.OfflineTtsConfig(model=model_cfg, max_num_sentences=1)
           tts = sherpa_onnx.OfflineTts(config)
-          audio = tts.generate(text, sid=0, speed=1.0)
-          
-          # Save file
+          audio = tts.generate(text, sid=speaker_id, speed=speed)
+
           os.makedirs("audio_samples", exist_ok=True)
           filename = f"audio_samples/sample_{os.environ['GITHUB_RUN_ID']}.wav"
           sf.write(filename, audio.samples, audio.sample_rate)
           print(f"✅ Saved to {filename}")
-          
-          # Pass filename to next step
-          with open(os.environ['GITHUB_ENV'], 'a') as f:
+
+          with open(os.environ["GITHUB_ENV"], "a") as f:
               f.write(f"AUDIO_FILE={filename}\n")
-          EOF
-          
+          PYEOF
+
           python generate_tts.py
 
       - name: Commit Audio to Repository
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add ${{ env.AUDIO_FILE }}
-          git commit -m "chore: add generated TTS audio sample [skip ci]" || echo "No changes"
+          git add "${{ env.AUDIO_FILE }}"
+          git commit -m "chore: TTS test sample [skip ci]" || echo "No changes to commit"
           git push
 
       - name: 🎧 Output Playable Browser Link
         run: |
           RAW_URL="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/${{ env.AUDIO_FILE }}"
-          echo "## 🎧 Click the link below to play the audio directly in your browser:" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔊 [PLAY AUDIO NOW]($RAW_URL)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "*(💡 Tip: Right-click and 'Open in new tab' if it downloads instead of playing)*" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## 🎧 Your TTS sample is ready"
+            echo "### 🔊 [PLAY AUDIO NOW]($RAW_URL)"
+            echo ""
+            echo "*(Right-click → 'Open in new tab' if it downloads instead of playing)*"
+            echo ""
+            echo "**Text used (from tts_input.txt):**"
+            echo '```'
+            cat tts_input.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
