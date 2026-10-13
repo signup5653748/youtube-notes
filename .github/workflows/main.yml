@@ -125,6 +125,32 @@ jobs:
           echo "✅ Downloaded files:"
           ls -lh *.onnx *.txt *.bin 2>/dev/null || true
 
+      - name: Sanitize & validate token/lexicon files
+        run: |
+          for f in tokens.txt lexicon.txt; do
+            if [ -f "$f" ]; then
+              sed -i 's/\r$//' "$f"
+            fi
+          done
+
+          python3 - << 'PYEOF'
+          with open("tokens.txt", encoding="utf-8") as f:
+              lines = f.readlines()
+          print(f"tokens.txt: {len(lines)} lines")
+          bad = []
+          for i, line in enumerate(lines, start=1):
+              stripped = line.rstrip("\n")
+              fields = stripped.split()
+              if len(fields) != 2:
+                  bad.append((i, repr(stripped)))
+          if bad:
+              print("⚠️ Lines that don't split into exactly 2 fields (token, id):")
+              for i, content in bad[:20]:
+                  print(f"  line {i}: {content}")
+          else:
+              print("✅ Every line has exactly 2 fields (token, id).")
+          PYEOF
+
       - name: Generate Audio (.wav)
         env:
           MODEL_TYPE: ${{ inputs.model_type }}
