@@ -11,14 +11,19 @@ on:
           - vits
           - matcha
           - kokoro
+          - piper
         default: vits
       model_url:
         description: 'Main model file URL (model.onnx, or acoustic model for matcha) — MUST contain /resolve/main/'
         required: true
         default: 'https://huggingface.co/sriram09764/itantra-tts-onnx/resolve/main/gu/model.onnx'
+      config_url:
+        description: '(piper only) .onnx.json config URL — MUST contain /resolve/main/'
+        required: false
+        default: ''
       tokens_url:
-        description: 'tokens.txt URL — MUST contain /resolve/main/'
-        required: true
+        description: 'tokens.txt URL (not used for piper) — MUST contain /resolve/main/'
+        required: false
         default: 'https://huggingface.co/sriram09764/itantra-tts-onnx/resolve/main/gu/tokens.txt'
       vocoder_url:
         description: '(matcha only) vocoder .onnx URL'
@@ -79,6 +84,8 @@ jobs:
           VOICES_URL: ${{ inputs.voices_url }}
           LEXICON_URL: ${{ inputs.lexicon_url }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          CONFIG_URL: ${{ inputs.config_url }}
+          MODEL_TYPE: ${{ inputs.model_type }}
         run: |
           fetch() {
             local url="$1" out="$2"
@@ -91,6 +98,7 @@ jobs:
             fi
             if [ "$http_code" -ge 400 ]; then
               echo "❌ $out failed to download (HTTP $http_code)."
+              echo "   401/403 = gated or private model: accept its terms on Hugging Face and add repo secret HF_TOKEN."
               rm -f "$out"
               exit 1
             fi
@@ -105,10 +113,18 @@ jobs:
           }
 
           fetch "$MODEL_URL" model.onnx
-          fetch "$TOKENS_URL" tokens.txt
-          fetch "$VOCODER_URL" vocoder.onnx
-          fetch "$VOICES_URL" voices.bin
-          fetch "$LEXICON_URL" lexicon.txt
+          if [ "$MODEL_TYPE" = "piper" ]; then
+            if [ -z "$CONFIG_URL" ]; then
+              echo "❌ piper model_type needs config_url (the .onnx.json file)."
+              exit 1
+            fi
+            fetch "$CONFIG_URL" model.onnx.json
+          else
+            fetch "$TOKENS_URL" tokens.txt
+            fetch "$VOCODER_URL" vocoder.onnx
+            fetch "$VOICES_URL" voices.bin
+            fetch "$LEXICON_URL" lexicon.txt
+          fi
 
           echo "✅ Downloaded files:"
           ls -lh *.onnx *.txt *.bin 2>/dev/null || true
@@ -151,6 +167,58 @@ jobs:
           SPEAKER_ID: ${{ inputs.speaker_id }}
           SPEED: ${{ inputs.speed }}
         run: |
+          if [ "$MODEL_TYPE" = "piper" ]; then
+            pip install --quiet piper-tts
+            cat << 'PIPEREOF' > piper_tts.py
+          import os
+          import subprocess
+          import sys
+          import wave
+          from piper import PiperVoice
+
+          text = open("tts_input.txt", encoding="utf-8").read().strip()
+          speaker_id = int(os.environ.get("SPEAKER_ID", "0") or "0")
+          speed = float(os.environ.get("SPEED", "1.0") or "1.0")
+
+          os.makedirs("audio_samples", exist_ok=True)
+          filename = f"audio_samples/sample_{os.environ['GITHUB_RUN_ID']}.wav"
+          print(f"piper mode: {len(text)} chars, speaker_id={speaker_id}, speed={speed}", flush=True)
+
+          def via_api():
+              try:
+                  from piper import SynthesisConfig
+              except ImportError:
+                  SynthesisConfig = None
+              voice = PiperVoice.load("model.onnx", config_path="model.onnx.json")
+              with wave.open(filename, "wb") as wf:
+                  if SynthesisConfig is not None:
+                      multi = getattr(voice.config, "num_speakers", 1) > 1
+                      syn = SynthesisConfig(length_scale=1.0 / speed, speaker_id=speaker_id if multi else None)
+                      voice.synthesize_wav(text, wf, syn_config=syn)
+                  else:
+                      voice.synthesize(text, wf, length_scale=1.0 / speed)
+
+          try:
+              via_api()
+          except Exception as e:
+              print(f"Python API failed ({e!r}); trying the piper CLI.", flush=True)
+              subprocess.run(
+                  [sys.executable, "-m", "piper", "-m", "model.onnx", "-c", "model.onnx.json", "-f", filename],
+                  input=text.encode("utf-8"),
+                  check=True,
+              )
+
+          if os.path.getsize(filename) < 1000:
+              sys.exit("No audio produced.")
+          print(f"✅ Saved to {filename}", flush=True)
+
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"AUDIO_FILE={filename}\n")
+          PIPEREOF
+            python -u piper_tts.py
+            exit 0
+          fi
+
           cat << 'PYEOF' > generate_tts.py
           import os
           import re
