@@ -124,7 +124,7 @@ jobs:
       - name: Inspect ONNX model (isolated install)
         continue-on-error: true
         run: |
-          pip install --quiet --target /tmp/onnxlib onnx
+          pip install --quiet --target /tmp/onnxlib onnx onnxruntime
           PYTHONPATH=/tmp/onnxlib python3 - << 'PYEOF'
           import onnx
           m = onnx.load("model.onnx")
@@ -262,6 +262,101 @@ jobs:
               f.write(f"AUDIO_FILE={filename}\n")
           PYEOF
 
+          cat << 'DIREOF' > direct_tts.py
+          import os
+          import re
+          import wave
+          import numpy as np
+          import onnxruntime as ort
+
+          with open("tts_input.txt", encoding="utf-8") as f:
+              raw_text = f.read().strip()
+
+          vocab = {}
+          with open("tokens.txt", encoding="utf-8") as f:
+              for line in f:
+                  line = line.rstrip("\n")
+                  if not line:
+                      continue
+                  tok, _, idx = line.rpartition(" ")
+                  vocab[tok if tok != "" else " "] = int(idx)
+
+          sess = ort.InferenceSession("model.onnx", providers=["CPUExecutionProvider"])
+          meta = sess.get_modelmeta().custom_metadata_map
+          add_blank = meta.get("add_blank", "1") == "1"
+          sr = int(meta.get("sample_rate", "16000"))
+          blank = vocab.get("_", 0)
+          in_name = sess.get_inputs()[0].name
+          print(f"direct mode: sample_rate={sr} add_blank={add_blank} vocab={len(vocab)}", flush=True)
+
+          def pieces(text):
+              out = []
+              for sent in re.split(r"[.!?।؟\n]+", text):
+                  sent = sent.strip()
+                  while len(sent) > 200:
+                      cut = sent.rfind(" ", 0, 200)
+                      cut = cut if cut > 0 else 200
+                      out.append(sent[:cut].strip())
+                      sent = sent[cut:].strip()
+                  if sent:
+                      out.append(sent)
+              return out
+
+          def encode(chunk):
+              ids = []
+              for ch in chunk:
+                  if ch in vocab:
+                      ids.append(vocab[ch])
+                  elif ch.lower() in vocab:
+                      ids.append(vocab[ch.lower()])
+              if add_blank:
+                  spaced = [blank]
+                  for i in ids:
+                      spaced += [i, blank]
+                  ids = spaced
+              return ids
+
+          parts = []
+          for n, chunk in enumerate(pieces(raw_text), 1):
+              ids = encode(chunk)
+              if len(ids) < 3:
+                  continue
+              print(f"synthesizing {n}: {chunk[:50]!r} ({len(ids)} tokens)", flush=True)
+              wav = sess.run(None, {in_name: np.array([ids], dtype=np.int64)})[0].reshape(-1)
+              if parts:
+                  parts.append(np.zeros(int(sr * 0.25), dtype=np.float32))
+              parts.append(wav.astype(np.float32))
+
+          if not parts:
+              raise SystemExit("No audio produced - none of the text characters are in tokens.txt.")
+
+          audio = np.concatenate(parts)
+          peak = float(np.max(np.abs(audio)))
+          if peak > 1.0:
+              audio = audio / peak
+          pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
+
+          os.makedirs("audio_samples", exist_ok=True)
+          filename = f"audio_samples/sample_{os.environ['GITHUB_RUN_ID']}.wav"
+          with wave.open(filename, "wb") as w:
+              w.setnchannels(1)
+              w.setsampwidth(2)
+              w.setframerate(sr)
+              w.writeframes(pcm.tobytes())
+          print(f"✅ Saved to {filename}", flush=True)
+
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"AUDIO_FILE={filename}\n")
+          DIREOF
+
+          MODEL_INPUTS=$(PYTHONPATH=/tmp/onnxlib python3 -c "import onnxruntime as ort; print(','.join(i.name for i in ort.InferenceSession('model.onnx', providers=['CPUExecutionProvider']).get_inputs()))")
+          echo "Model inputs: $MODEL_INPUTS"
+          if [ "$MODEL_INPUTS" = "x" ]; then
+            echo "Single-input export detected (not the sherpa-onnx layout) - using ONNX Runtime directly."
+            PYTHONPATH=/tmp/onnxlib python -u direct_tts.py
+            exit 0
+          fi
+
           for attempt in clean_per_sentence clean_whole raw_whole; do
             echo "=== Attempt: $attempt ==="
             if python -u generate_tts.py "$attempt"; then
@@ -271,7 +366,7 @@ jobs:
             fi
           done
           echo "❌ All attempts failed. Model details for debugging:"
-          pip install --quiet --target /tmp/onnxlib onnx
+          pip install --quiet --target /tmp/onnxlib onnx onnxruntime 2>/dev/null || true
           PYTHONPATH=/tmp/onnxlib python3 - << 'INSPECTEOF'
           import onnx
           m = onnx.load("model.onnx")
