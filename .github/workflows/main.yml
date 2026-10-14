@@ -1,13 +1,4 @@
-.github/workflows/universal-tts-tester.yml
 name: Universal TTS Model Tester
-
-# Put this file at: .github/workflows/universal-tts-tester.yml
-# Put your text to speak in a file at the repo root called: tts_input.txt
-# (any language/script — it's read as UTF-8)
-#
-# Gated/private Hugging Face model? Add a repo secret named HF_TOKEN
-# (Settings -> Secrets and variables -> Actions). It's used automatically
-# if present; nothing to type into the workflow itself.
 
 on:
   workflow_dispatch:
@@ -64,11 +55,10 @@ jobs:
         run: |
           if [ ! -f "tts_input.txt" ]; then
             echo "❌ tts_input.txt not found at repo root."
-            echo "Create it, paste the text you want spoken, commit it, then re-run this workflow."
             exit 1
           fi
           if [ ! -s "tts_input.txt" ]; then
-            echo "❌ tts_input.txt is empty. Add some text first."
+            echo "❌ tts_input.txt is empty."
             exit 1
           fi
           echo "✅ Found tts_input.txt ($(wc -c < tts_input.txt) bytes)"
@@ -101,8 +91,6 @@ jobs:
             fi
             if [ "$http_code" -ge 400 ]; then
               echo "❌ $out failed to download (HTTP $http_code)."
-              echo "   If this is a gated/private HF model, add a repo secret named HF_TOKEN."
-              echo "   Otherwise double-check the URL and that it contains /resolve/main/."
               rm -f "$out"
               exit 1
             fi
@@ -112,7 +100,6 @@ jobs:
             fi
             if head -c 200 "$out" | grep -qi "<!doctype html\|<html"; then
               echo "❌ $out looks like an HTML page, not the real file."
-              echo "   Make sure the URL contains /resolve/main/ (not /blob/main/)."
               exit 1
             fi
           }
@@ -248,12 +235,8 @@ jobs:
             echo "## 🎧 Your TTS sample is ready"
             echo "### 🔊 [PLAY AUDIO NOW]($RAW_URL)"
             echo ""
-            echo "*(Right-click → 'Open in new tab' if it downloads instead of playing)*"
-            echo ""
             echo "**Text used (from tts_input.txt):**"
             echo '```'
             cat tts_input.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-tts_input.txt
-નમસ્તે, આ એક યુનિવર્સલ ટેસ્ટ છે.
