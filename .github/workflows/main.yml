@@ -398,10 +398,12 @@ jobs:
 
       - name: 🎧 Output Playable Browser Link
         run: |
-          RAW_URL="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/${{ env.AUDIO_FILE }}"
+          PLAY_URL="https://raw.githack.com/${{ github.repository }}/${{ github.ref_name }}/${{ env.AUDIO_FILE }}"
           {
             echo "## 🎧 Your TTS sample is ready"
-            echo "### 🔊 [PLAY AUDIO NOW]($RAW_URL)"
+            echo "### 🔊 [PLAY IN BROWSER]($PLAY_URL)"
+            echo ""
+            echo "File in repo: ${{ env.AUDIO_FILE }}"
             echo ""
             echo "**Text used (from tts_input.txt):**"
             echo '```'
