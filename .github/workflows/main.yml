@@ -69,7 +69,7 @@ jobs:
           python-version: '3.10'
 
       - name: Install Dependencies
-        run: pip install sherpa-onnx soundfile numpy onnx
+        run: pip install sherpa-onnx soundfile numpy
 
       - name: Download model files
         env:
@@ -121,26 +121,28 @@ jobs:
             fi
           done
 
-      - name: Inspect ONNX model inputs
+      - name: Inspect ONNX model (isolated install)
+        continue-on-error: true
         run: |
-          python3 - << 'PYEOF'
+          pip install --quiet --target /tmp/onnxlib onnx
+          PYTHONPATH=/tmp/onnxlib python3 - << 'PYEOF'
           import onnx
-          model = onnx.load("model.onnx")
+          m = onnx.load("model.onnx")
+          init = {x.name for x in m.graph.initializer}
 
           def shape_of(t):
               return [d.dim_value if d.dim_value else d.dim_param for d in t.type.tensor_type.shape.dim]
 
           print("Inputs:")
-          for inp in model.graph.input:
-              print(f"  name={inp.name!r} shape={shape_of(inp)}")
+          for i in m.graph.input:
+              if i.name not in init:
+                  print(f"  name={i.name!r} shape={shape_of(i)}")
           print("Outputs:")
-          for out in model.graph.output:
-              print(f"  name={out.name!r} shape={shape_of(out)}")
-
-          empty = [inp.name for inp in model.graph.input if not inp.name]
-          if empty:
-              print("XXX This ONNX model has input(s) with no name - it is not compatible")
-              print("    with sherpa-onnx's VITS wrapper. A different model export is needed.")
+          for o in m.graph.output:
+              print(f"  name={o.name!r} shape={shape_of(o)}")
+          print("Metadata:")
+          for p in m.metadata_props:
+              print(f"  {p.key} = {p.value[:80]!r}")
           PYEOF
 
       - name: Generate Audio (.wav)
@@ -152,28 +154,30 @@ jobs:
           cat << 'PYEOF' > generate_tts.py
           import os
           import re
+          import sys
           import numpy as np
           import sherpa_onnx
           import soundfile as sf
 
+          attempt = sys.argv[1]
           model_type = os.environ["MODEL_TYPE"]
           speaker_id = int(os.environ.get("SPEAKER_ID", "0") or "0")
           speed = float(os.environ.get("SPEED", "1.0") or "1.0")
 
-          with open("tts_input.txt", "r", encoding="utf-8") as f:
+          with open("tts_input.txt", encoding="utf-8") as f:
               raw_text = f.read().strip()
 
-          print(f"Model type: {model_type}")
-          print(f"Text ({len(raw_text)} chars): {raw_text[:200]}")
+          print(f"[{attempt}] sherpa-onnx {getattr(sherpa_onnx, '__version__', '?')} | model_type={model_type} | text={len(raw_text)} chars", flush=True)
 
           lexicon = "lexicon.txt" if os.path.exists("lexicon.txt") else ""
+          max_sentences = -1 if attempt == "raw_whole" else 1
 
           if model_type == "vits":
               model_cfg = sherpa_onnx.OfflineTtsModelConfig(
                   vits=sherpa_onnx.OfflineTtsVitsModelConfig(
                       model="model.onnx", tokens="tokens.txt", lexicon=lexicon,
                   ),
-                  num_threads=1, debug=False,
+                  num_threads=1, debug=True,
               )
           elif model_type == "matcha":
               if not os.path.exists("vocoder.onnx"):
@@ -183,7 +187,7 @@ jobs:
                       acoustic_model="model.onnx", vocoder="vocoder.onnx",
                       tokens="tokens.txt", lexicon=lexicon,
                   ),
-                  num_threads=1, debug=False,
+                  num_threads=1, debug=True,
               )
           elif model_type == "kokoro":
               if not os.path.exists("voices.bin"):
@@ -193,54 +197,81 @@ jobs:
                       model="model.onnx", voices="voices.bin",
                       tokens="tokens.txt", lexicon=lexicon,
                   ),
-                  num_threads=1, debug=False,
+                  num_threads=1, debug=True,
               )
           else:
               raise SystemExit(f"Unknown model_type: {model_type}")
 
-          config = sherpa_onnx.OfflineTtsConfig(model=model_cfg, max_num_sentences=-1)
+          def load_allowed():
+              allowed = set()
+              with open("tokens.txt", encoding="utf-8") as f:
+                  for line in f:
+                      line = line.rstrip("\n")
+                      if not line:
+                          continue
+                      tok = line.rsplit(" ", 1)[0] if " " in line else line
+                      if tok == "":
+                          tok = " "
+                      if len(tok) != 1:
+                          return None
+                      allowed.add(tok)
+              return allowed
+
+          def clean(s, allowed):
+              if allowed is None:
+                  return s.strip()
+              s = "".join(ch if (ch in allowed or ch.isspace()) else " " for ch in s)
+              return re.sub(r"\s+", " ", s).strip()
+
+          allowed = load_allowed()
+          print(f"[{attempt}] token chars known: {len(allowed) if allowed else 'n/a (not a char-level model)'}", flush=True)
+
+          if attempt == "clean_per_sentence":
+              texts = [clean(p, allowed) for p in re.split(r"[.!?।؟\n]+", raw_text)]
+              texts = [t for t in texts if t]
+          elif attempt == "clean_whole":
+              texts = [clean(raw_text, allowed)]
+          else:
+              texts = [raw_text]
+
+          config = sherpa_onnx.OfflineTtsConfig(model=model_cfg, max_num_sentences=max_sentences)
           tts = sherpa_onnx.OfflineTts(config)
+          print(f"[{attempt}] model loaded, sample_rate={tts.sample_rate}", flush=True)
 
-          def try_generate(text):
-              return tts.generate(text, sid=speaker_id, speed=speed)
-
-          sample_rate = None
-          chunks = []
-
-          try:
-              audio = try_generate(raw_text)
-              chunks.append(audio.samples)
-              sample_rate = audio.sample_rate
-              print("✅ Generated in a single pass.")
-          except Exception as e:
-              print(f"⚠️ Whole-text generation failed ({e}); retrying sentence-by-sentence.")
-              parts = re.split(r"(?<=[.!?।؟\n])\s+", raw_text)
-              for part in parts:
-                  part = part.strip()
-                  if not part or not re.search(r"\w", part, flags=re.UNICODE):
-                      continue
-                  try:
-                      audio = try_generate(part)
-                      chunks.append(audio.samples)
-                      sample_rate = audio.sample_rate
-                  except Exception as inner_e:
-                      print(f"   ⚠️ Skipped a fragment that failed: {part[:60]!r} ({inner_e})")
+          chunks, sr = [], None
+          for i, t in enumerate(texts, 1):
+              print(f"[{attempt}] synthesizing {i}/{len(texts)}: {t[:50]!r}", flush=True)
+              audio = tts.generate(t, sid=speaker_id, speed=speed)
+              if len(audio.samples) == 0:
+                  print("  (empty audio, skipped)", flush=True)
+                  continue
+              sr = audio.sample_rate
+              if chunks:
+                  chunks.append(np.zeros(int(sr * 0.25), dtype=np.float32))
+              chunks.append(np.asarray(audio.samples, dtype=np.float32))
 
           if not chunks:
-              raise SystemExit("❌ No audio could be generated from tts_input.txt with this model.")
-
-          samples = np.concatenate(chunks)
+              sys.exit("No audio produced.")
 
           os.makedirs("audio_samples", exist_ok=True)
           filename = f"audio_samples/sample_{os.environ['GITHUB_RUN_ID']}.wav"
-          sf.write(filename, samples, sample_rate)
-          print(f"✅ Saved to {filename}")
+          sf.write(filename, np.concatenate(chunks), sr)
+          print(f"✅ Saved to {filename}", flush=True)
 
           with open(os.environ["GITHUB_ENV"], "a") as f:
               f.write(f"AUDIO_FILE={filename}\n")
           PYEOF
 
-          python generate_tts.py
+          for attempt in clean_per_sentence clean_whole raw_whole; do
+            echo "=== Attempt: $attempt ==="
+            if python -u generate_tts.py "$attempt"; then
+              exit 0
+            else
+              echo "⚠️ Attempt $attempt failed with exit code $? (139 = segfault, 1 = Python error)"
+            fi
+          done
+          echo "❌ All attempts failed."
+          exit 1
 
       - name: Commit Audio to Repository
         run: |
