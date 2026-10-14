@@ -69,7 +69,7 @@ jobs:
           python-version: '3.10'
 
       - name: Install Dependencies
-        run: pip install sherpa-onnx soundfile numpy
+        run: pip install sherpa-onnx soundfile numpy onnxruntime
 
       - name: Download model files
         env:
@@ -120,6 +120,23 @@ jobs:
               sed -i 's/\r$//' "$f"
             fi
           done
+
+      - name: Inspect ONNX model inputs
+        run: |
+          python3 - << 'PYEOF'
+          import onnxruntime as ort
+          sess = ort.InferenceSession("model.onnx", providers=["CPUExecutionProvider"])
+          print("Inputs:")
+          for i in sess.get_inputs():
+              print(f"  name={i.name!r} shape={i.shape} type={i.type}")
+          print("Outputs:")
+          for o in sess.get_outputs():
+              print(f"  name={o.name!r} shape={o.shape} type={o.type}")
+          empty = [i.name for i in sess.get_inputs() if not i.name]
+          if empty:
+              print("XXX This ONNX model has input(s) with no name - it is not compatible")
+              print("    with sherpa-onnx's VITS wrapper. A different model export is needed.")
+          PYEOF
 
       - name: Generate Audio (.wav)
         env:
