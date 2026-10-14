@@ -1,4 +1,13 @@
+.github/workflows/universal-tts-tester.yml
+name: Universal TTS Model Tester
 
+# Put this file at: .github/workflows/universal-tts-tester.yml
+# Put your text to speak in a file at the repo root called: tts_input.txt
+# (any language/script — it's read as UTF-8)
+#
+# Gated/private Hugging Face model? Add a repo secret named HF_TOKEN
+# (Settings -> Secrets and variables -> Actions). It's used automatically
+# if present; nothing to type into the workflow itself.
 
 on:
   workflow_dispatch:
@@ -246,7 +255,5 @@ jobs:
             cat tts_input.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-2. tts_input.txt (repo root — replace with your own text)
+tts_input.txt
 નમસ્તે, આ એક યુનિવર્સલ ટેસ્ટ છે.
-If it still fails
-Paste the run log here — specifically whatever appears right after ⚠️ Whole-text generation failed, since that now names the exact failure instead of a blind crash.
