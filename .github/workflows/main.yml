@@ -1,12 +1,4 @@
-name: Universal TTS Model Tester
 
-# Put this file at: .github/workflows/universal-tts-tester.yml
-# Put your text to speak in a file at the repo root called: tts_input.txt
-# (any language/script — it's read as UTF-8)
-#
-# Gated/private Hugging Face model? Add a repo secret named HF_TOKEN
-# (Settings -> Secrets and variables -> Actions). It's used automatically
-# if present; nothing to type into the workflow itself.
 
 on:
   workflow_dispatch:
@@ -78,7 +70,7 @@ jobs:
           python-version: '3.10'
 
       - name: Install Dependencies
-        run: pip install sherpa-onnx soundfile
+        run: pip install sherpa-onnx soundfile numpy
 
       - name: Download model files
         env:
@@ -125,31 +117,13 @@ jobs:
           echo "✅ Downloaded files:"
           ls -lh *.onnx *.txt *.bin 2>/dev/null || true
 
-      - name: Sanitize & validate token/lexicon files
+      - name: Sanitize token/lexicon files
         run: |
           for f in tokens.txt lexicon.txt; do
             if [ -f "$f" ]; then
               sed -i 's/\r$//' "$f"
             fi
           done
-
-          python3 - << 'PYEOF'
-          with open("tokens.txt", encoding="utf-8") as f:
-              lines = f.readlines()
-          print(f"tokens.txt: {len(lines)} lines")
-          bad = []
-          for i, line in enumerate(lines, start=1):
-              stripped = line.rstrip("\n")
-              fields = stripped.split()
-              if len(fields) != 2:
-                  bad.append((i, repr(stripped)))
-          if bad:
-              print("⚠️ Lines that don't split into exactly 2 fields (token, id):")
-              for i, content in bad[:20]:
-                  print(f"  line {i}: {content}")
-          else:
-              print("✅ Every line has exactly 2 fields (token, id).")
-          PYEOF
 
       - name: Generate Audio (.wav)
         env:
@@ -159,6 +133,8 @@ jobs:
         run: |
           cat << 'PYEOF' > generate_tts.py
           import os
+          import re
+          import numpy as np
           import sherpa_onnx
           import soundfile as sf
 
@@ -167,59 +143,79 @@ jobs:
           speed = float(os.environ.get("SPEED", "1.0") or "1.0")
 
           with open("tts_input.txt", "r", encoding="utf-8") as f:
-              text = f.read().strip()
+              raw_text = f.read().strip()
 
           print(f"Model type: {model_type}")
-          print(f"Text ({len(text)} chars): {text[:200]}")
+          print(f"Text ({len(raw_text)} chars): {raw_text[:200]}")
 
           lexicon = "lexicon.txt" if os.path.exists("lexicon.txt") else ""
 
           if model_type == "vits":
               model_cfg = sherpa_onnx.OfflineTtsModelConfig(
                   vits=sherpa_onnx.OfflineTtsVitsModelConfig(
-                      model="model.onnx",
-                      tokens="tokens.txt",
-                      lexicon=lexicon,
+                      model="model.onnx", tokens="tokens.txt", lexicon=lexicon,
                   ),
-                  num_threads=1,
-                  debug=False,
+                  num_threads=1, debug=False,
               )
           elif model_type == "matcha":
               if not os.path.exists("vocoder.onnx"):
                   raise SystemExit("matcha model_type needs vocoder_url set.")
               model_cfg = sherpa_onnx.OfflineTtsModelConfig(
                   matcha=sherpa_onnx.OfflineTtsMatchaModelConfig(
-                      acoustic_model="model.onnx",
-                      vocoder="vocoder.onnx",
-                      tokens="tokens.txt",
-                      lexicon=lexicon,
+                      acoustic_model="model.onnx", vocoder="vocoder.onnx",
+                      tokens="tokens.txt", lexicon=lexicon,
                   ),
-                  num_threads=1,
-                  debug=False,
+                  num_threads=1, debug=False,
               )
           elif model_type == "kokoro":
               if not os.path.exists("voices.bin"):
                   raise SystemExit("kokoro model_type needs voices_url set.")
               model_cfg = sherpa_onnx.OfflineTtsModelConfig(
                   kokoro=sherpa_onnx.OfflineTtsKokoroModelConfig(
-                      model="model.onnx",
-                      voices="voices.bin",
-                      tokens="tokens.txt",
-                      lexicon=lexicon,
+                      model="model.onnx", voices="voices.bin",
+                      tokens="tokens.txt", lexicon=lexicon,
                   ),
-                  num_threads=1,
-                  debug=False,
+                  num_threads=1, debug=False,
               )
           else:
               raise SystemExit(f"Unknown model_type: {model_type}")
 
-          config = sherpa_onnx.OfflineTtsConfig(model=model_cfg, max_num_sentences=1)
+          config = sherpa_onnx.OfflineTtsConfig(model=model_cfg, max_num_sentences=-1)
           tts = sherpa_onnx.OfflineTts(config)
-          audio = tts.generate(text, sid=speaker_id, speed=speed)
+
+          def try_generate(text):
+              return tts.generate(text, sid=speaker_id, speed=speed)
+
+          sample_rate = None
+          chunks = []
+
+          try:
+              audio = try_generate(raw_text)
+              chunks.append(audio.samples)
+              sample_rate = audio.sample_rate
+              print("✅ Generated in a single pass.")
+          except Exception as e:
+              print(f"⚠️ Whole-text generation failed ({e}); retrying sentence-by-sentence.")
+              parts = re.split(r"(?<=[.!?।؟\n])\s+", raw_text)
+              for part in parts:
+                  part = part.strip()
+                  if not part or not re.search(r"\w", part, flags=re.UNICODE):
+                      continue
+                  try:
+                      audio = try_generate(part)
+                      chunks.append(audio.samples)
+                      sample_rate = audio.sample_rate
+                  except Exception as inner_e:
+                      print(f"   ⚠️ Skipped a fragment that failed: {part[:60]!r} ({inner_e})")
+
+          if not chunks:
+              raise SystemExit("❌ No audio could be generated from tts_input.txt with this model.")
+
+          samples = np.concatenate(chunks)
 
           os.makedirs("audio_samples", exist_ok=True)
           filename = f"audio_samples/sample_{os.environ['GITHUB_RUN_ID']}.wav"
-          sf.write(filename, audio.samples, audio.sample_rate)
+          sf.write(filename, samples, sample_rate)
           print(f"✅ Saved to {filename}")
 
           with open(os.environ["GITHUB_ENV"], "a") as f:
@@ -250,3 +246,7 @@ jobs:
             cat tts_input.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+2. tts_input.txt (repo root — replace with your own text)
+નમસ્તે, આ એક યુનિવર્સલ ટેસ્ટ છે.
+If it still fails
+Paste the run log here — specifically whatever appears right after ⚠️ Whole-text generation failed, since that now names the exact failure instead of a blind crash.
