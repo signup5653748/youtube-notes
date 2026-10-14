@@ -270,7 +270,27 @@ jobs:
               echo "⚠️ Attempt $attempt failed with exit code $? (139 = segfault, 1 = Python error)"
             fi
           done
-          echo "❌ All attempts failed."
+          echo "❌ All attempts failed. Model details for debugging:"
+          pip install --quiet --target /tmp/onnxlib onnx
+          PYTHONPATH=/tmp/onnxlib python3 - << 'INSPECTEOF'
+          import onnx
+          m = onnx.load("model.onnx")
+          init = {x.name for x in m.graph.initializer}
+
+          def shape_of(t):
+              return [d.dim_value if d.dim_value else d.dim_param for d in t.type.tensor_type.shape.dim]
+
+          print("MODEL INPUTS:")
+          for i in m.graph.input:
+              if i.name not in init:
+                  print(f"  name={i.name!r} shape={shape_of(i)}")
+          print("MODEL OUTPUTS:")
+          for o in m.graph.output:
+              print(f"  name={o.name!r} shape={shape_of(o)}")
+          print("MODEL METADATA:")
+          for p in m.metadata_props:
+              print(f"  {p.key} = {p.value[:60]!r}")
+          INSPECTEOF
           exit 1
 
       - name: Commit Audio to Repository
