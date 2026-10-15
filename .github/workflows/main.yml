@@ -12,6 +12,7 @@ on:
           - matcha
           - kokoro
           - piper
+          - parler
         default: vits
       model_url:
         description: 'Main model file URL (model.onnx, or acoustic model for matcha) — MUST contain /resolve/main/'
@@ -37,6 +38,14 @@ on:
         description: '(optional, some languages e.g. Mandarin) lexicon.txt URL'
         required: false
         default: ''
+      hf_repo_id:
+        description: '(parler only) Hugging Face repo id of the model'
+        required: false
+        default: 'ai4bharat/indic-parler-tts'
+      voice_description:
+        description: '(parler only) describe the voice in English: speaker name, pace, recording quality'
+        required: false
+        default: "Yash's voice is clear and natural, spoken at a moderate pace, in a very close recording with almost no background noise."
       speaker_id:
         description: 'Speaker ID (multi-speaker models)'
         required: false
@@ -120,6 +129,11 @@ jobs:
             fi
           }
 
+          if [ "$MODEL_TYPE" = "parler" ]; then
+            echo "parler mode: the model is loaded by repo id, skipping file downloads."
+            exit 0
+          fi
+
           fetch "$MODEL_URL" model.onnx
           if [ "$MODEL_TYPE" = "piper" ]; then
             if [ -z "$CONFIG_URL" ]; then
@@ -146,6 +160,7 @@ jobs:
           done
 
       - name: Inspect ONNX model (isolated install)
+        if: ${{ inputs.model_type != 'parler' }}
         continue-on-error: true
         run: |
           pip install --quiet --target /tmp/onnxlib onnx onnxruntime
@@ -174,7 +189,81 @@ jobs:
           MODEL_TYPE: ${{ inputs.model_type }}
           SPEAKER_ID: ${{ inputs.speaker_id }}
           SPEED: ${{ inputs.speed }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_REPO_ID: ${{ inputs.hf_repo_id }}
+          VOICE_DESCRIPTION: ${{ inputs.voice_description }}
         run: |
+          if [ "$MODEL_TYPE" = "parler" ]; then
+            pip install --quiet torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+            pip install --quiet git+https://github.com/huggingface/parler-tts.git sentencepiece
+            cat << 'PARLEREOF' > run_parler.py
+          import os
+          import re
+          import time
+          import numpy as np
+          import soundfile as sf
+          import torch
+          from parler_tts import ParlerTTSForConditionalGeneration
+          from transformers import AutoTokenizer
+
+          repo = os.environ.get("HF_REPO_ID") or "ai4bharat/indic-parler-tts"
+          description = os.environ.get("VOICE_DESCRIPTION", "").strip()
+          text = open("tts_input.txt", encoding="utf-8").read().strip()
+          torch.set_num_threads(os.cpu_count() or 2)
+          print(f"parler mode: repo={repo}, {len(text)} chars, {torch.get_num_threads()} threads", flush=True)
+
+          model = ParlerTTSForConditionalGeneration.from_pretrained(repo)
+          tokenizer = AutoTokenizer.from_pretrained(repo)
+          desc_tokenizer = AutoTokenizer.from_pretrained(model.config.text_encoder._name_or_path)
+          sr = model.config.sampling_rate
+          print(f"model loaded, sampling_rate={sr}", flush=True)
+
+
+          def chunks(t):
+              out = []
+              for sent in re.split(r"(?<=[.!?।؟])\s+|\n+", t):
+                  sent = sent.strip()
+                  while len(sent) > 250:
+                      cut = sent.rfind(" ", 0, 250)
+                      cut = cut if cut > 0 else 250
+                      out.append(sent[:cut].strip())
+                      sent = sent[cut:].strip()
+                  if sent:
+                      out.append(sent)
+              return out
+
+
+          desc_ids = desc_tokenizer(description, return_tensors="pt")
+          pieces = chunks(text)
+          parts = []
+          for n, piece in enumerate(pieces, 1):
+              t0 = time.time()
+              print(f"synthesizing {n}/{len(pieces)}: {piece[:50]!r}", flush=True)
+              prompt_ids = tokenizer(piece, return_tensors="pt")
+              with torch.no_grad():
+                  gen = model.generate(
+                      input_ids=desc_ids.input_ids,
+                      attention_mask=desc_ids.attention_mask,
+                      prompt_input_ids=prompt_ids.input_ids,
+                      prompt_attention_mask=prompt_ids.attention_mask,
+                  )
+              parts.append(gen.cpu().numpy().squeeze().astype(np.float32))
+              parts.append(np.zeros(int(sr * 0.3), dtype=np.float32))
+              print(f"   done in {time.time() - t0:.0f}s", flush=True)
+
+          audio = np.concatenate(parts)
+          os.makedirs("audio_samples", exist_ok=True)
+          filename = f"audio_samples/sample_{os.environ['GITHUB_RUN_ID']}.wav"
+          sf.write(filename, audio, sr)
+          print(f"✅ Saved to {filename} ({len(audio) / sr:.1f} s of audio)", flush=True)
+
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"AUDIO_FILE={filename}\n")
+          PARLEREOF
+            python -u run_parler.py
+            exit 0
+          fi
+
           if [ "$MODEL_TYPE" = "piper" ]; then
             pip install --quiet piper-tts
             cat << 'PIPEREOF' > piper_tts.py
@@ -191,10 +280,17 @@ jobs:
               with open(path, encoding="utf-8") as f:
                   cfg = json.load(f)
               print("config keys:", sorted(cfg.keys()), flush=True)
+              added = []
+              if "phoneme_id_map" not in cfg:
+                  try:
+                      from piper.phoneme_ids import DEFAULT_PHONEME_ID_MAP
+                      cfg["phoneme_id_map"] = DEFAULT_PHONEME_ID_MAP
+                      added.append("phoneme_id_map")
+                  except Exception as err:
+                      print("Could not load piper's default phoneme map:", repr(err), flush=True)
               ids = []
               for v in cfg.get("phoneme_id_map", {}).values():
                   ids.extend(v if isinstance(v, list) else [v])
-              added = []
               if "num_symbols" not in cfg:
                   cfg["num_symbols"] = (max(ids) + 1) if ids else 256
                   added.append("num_symbols")
@@ -251,6 +347,7 @@ jobs:
               if res.returncode != 0:
                   print("=== PIPER FAILED ===", flush=True)
                   print("Python API error:", api_error, flush=True)
+                  print("config head:", open("model.onnx.json", encoding="utf-8", errors="replace").read(300), flush=True)
                   print("CLI error (last lines):", flush=True)
                   lines = res.stderr.decode("utf-8", "replace").strip().splitlines()[-15:]
                   print(*lines, sep=chr(10), flush=True)
