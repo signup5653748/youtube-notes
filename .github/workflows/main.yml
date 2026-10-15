@@ -87,6 +87,14 @@ jobs:
           CONFIG_URL: ${{ inputs.config_url }}
           MODEL_TYPE: ${{ inputs.model_type }}
         run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "WARNING: HF_TOKEN is EMPTY - the secret is missing, misnamed, or not a repository secret of this repo."
+          else
+            echo "HF_TOKEN is set (${#HF_TOKEN} characters)."
+            who=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $HF_TOKEN" https://huggingface.co/api/whoami-v2)
+            echo "Token check with Hugging Face: HTTP $who (200 = valid token, 401 = invalid token)."
+          fi
+
           fetch() {
             local url="$1" out="$2"
             if [ -z "$url" ]; then return 0; fi
@@ -98,7 +106,7 @@ jobs:
             fi
             if [ "$http_code" -ge 400 ]; then
               echo "❌ $out failed to download (HTTP $http_code)."
-              echo "   401/403 = gated or private model: accept its terms on Hugging Face and add repo secret HF_TOKEN."
+              echo "   401 = token missing or invalid. 403 = token valid but no access: accept the model terms with the SAME Hugging Face account, and if the token is fine-grained, enable read access to public gated repos."
               rm -f "$out"
               exit 1
             fi
@@ -175,6 +183,36 @@ jobs:
           import sys
           import wave
           from piper import PiperVoice
+          import json
+
+
+          def patch_config(path):
+              with open(path, encoding="utf-8") as f:
+                  cfg = json.load(f)
+              print("config keys:", sorted(cfg.keys()), flush=True)
+              ids = []
+              for v in cfg.get("phoneme_id_map", {}).values():
+                  ids.extend(v if isinstance(v, list) else [v])
+              added = []
+              if "num_symbols" not in cfg:
+                  cfg["num_symbols"] = (max(ids) + 1) if ids else 256
+                  added.append("num_symbols")
+              if "num_speakers" not in cfg:
+                  cfg["num_speakers"] = 1
+                  added.append("num_speakers")
+              if "sample_rate" not in cfg.setdefault("audio", {}):
+                  cfg["audio"]["sample_rate"] = 22050
+                  added.append("audio.sample_rate")
+              if not cfg.setdefault("espeak", {}).get("voice"):
+                  cfg["espeak"]["voice"] = "gu"
+                  added.append("espeak.voice")
+              if added:
+                  print("config was missing, filled in:", added, flush=True)
+                  with open(path, "w", encoding="utf-8") as f:
+                      json.dump(cfg, f, ensure_ascii=False)
+
+
+          patch_config("model.onnx.json")
 
           text = open("tts_input.txt", encoding="utf-8").read().strip()
           speaker_id = int(os.environ.get("SPEAKER_ID", "0") or "0")
