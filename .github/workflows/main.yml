@@ -180,6 +180,7 @@ jobs:
             cat << 'PIPEREOF' > piper_tts.py
           import os
           import subprocess
+          import traceback
           import sys
           import wave
           from piper import PiperVoice
@@ -239,12 +240,21 @@ jobs:
           try:
               via_api()
           except Exception as e:
-              print(f"Python API failed ({e!r}); trying the piper CLI.", flush=True)
-              subprocess.run(
+              api_error = f"{type(e).__name__}: {e}"
+              traceback.print_exc()
+              print(f"Python API failed ({api_error}); trying the piper CLI.", flush=True)
+              res = subprocess.run(
                   [sys.executable, "-m", "piper", "-m", "model.onnx", "-c", "model.onnx.json", "-f", filename],
                   input=text.encode("utf-8"),
-                  check=True,
+                  capture_output=True,
               )
+              if res.returncode != 0:
+                  print("=== PIPER FAILED ===", flush=True)
+                  print("Python API error:", api_error, flush=True)
+                  print("CLI error (last lines):", flush=True)
+                  lines = res.stderr.decode("utf-8", "replace").strip().splitlines()[-15:]
+                  print(*lines, sep=chr(10), flush=True)
+                  sys.exit(1)
 
           if os.path.getsize(filename) < 1000:
               sys.exit("No audio produced.")
